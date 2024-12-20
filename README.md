@@ -1,7 +1,7 @@
 <p align="center"><img src="http://i.imgur.com/JyE27u3.gif"/></p>  
- 
-#Py Rollers Casino
 
+#Py Rollers Casino
+The project is available here : [github](https://github.com/iminurnamez/pyroller?tab=readme-ov-file)
 Py Rollers Casino is a group Pygame project focused on creating a collection of casino mini-games.  Please note that this is a CC-0 project so all contributions must be licensed as such.  Discussion on the project takes place on [our project subreddit](http://www.reddit.com/r/PyRollersCasino/).
 
 ##Project Goals  
