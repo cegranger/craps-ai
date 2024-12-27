@@ -1,13 +1,17 @@
-from collections import OrderedDict
+import os
 import random
+from collections import OrderedDict
 
-import pygame as pg
 import cv2
-from data import tools, prepare
-from data.components.labels import NeonButton, Label, ButtonGroup, TextBox
-from . import craps_data, dice, point_chip
+import pygame as pg
+
 import data.state
+import models.yolo as yolo
+from data import prepare, tools
+from data.components.labels import ButtonGroup, Label, NeonButton, TextBox
 from data.states.craps.opencv_dice import take_picture
+
+from . import craps_data, dice, point_chip
 
 
 class Craps(data.state.State):
@@ -49,6 +53,17 @@ class Craps(data.state.State):
         #VIDEO CAPTURE
         self.cap = cv2.VideoCapture(0)
         #cap.release()
+
+        self.model = yolo.load_model(os.path.join(
+            os.path.dirname(__file__),
+            "..", "..", "..",
+            "models",
+            "craps-ai",
+            # "yolov8n",
+            "yolov8n2",
+            "weights",
+            "best.pt"
+        ))
 
     @staticmethod
     def initialize_stats():
@@ -102,12 +117,13 @@ class Craps(data.state.State):
     def roll(self, *args):
         if not self.dice[0].rolling:
             self.update_history()
-            dice_value, crops = take_picture(self.cap)
-            print("Nombre de dés", len(dice_value))
-            if len(dice_value) == len(self.dice):
+            # dice_value, crops = take_picture(self.cap)
+            dice_values, crops = yolo.take_picture(self.cap, self.model)
+            print(f'Dice Count: {len(dice_values)}')
+            if len(dice_values) == len(self.dice):
                 for i, die in enumerate(self.dice):
-                    print('ALLOOO', dice_value[i])
-                    die.reset(dice_value[i], crops[i])
+                    print(f'Dice {i+1}: {dice_values[i]}')
+                    die.reset(dice_values[i], crops[i])
                 if prepare.DEBUG:
                     print(self.history)
                 random.choice(self.dice_sounds).play()
