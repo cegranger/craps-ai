@@ -169,13 +169,15 @@ if __name__ == "__main__":
     epochs = 10
     batch_size = 16
     img_size = 640
-    train = False
+    obb_format = True
+    train = True
 
     dataset_path = os.path.join(os.path.dirname(__file__), "..", "datasets")
     yaml_path = os.path.join(dataset_path, "dice_d6.yaml")
+    model_name = "yolov8n-obb" if obb_format else "yolov8n" 
 
     if train:
-        yolo_model = train_model(yaml_path, epochs, batch_size, img_size, device="0")
+        yolo_model = train_model(yaml_path, epochs, batch_size, img_size, device="0", name=model_name)
     else:
         yolo_model = load_model(os.path.join(
             os.path.dirname(__file__),
