@@ -1,6 +1,7 @@
 import pygame as pg
+
 from .. import prepare, tools
-from .labels import MultiLineLabel, NeonButton, ButtonGroup
+from .labels import ButtonGroup, MultiLineLabel, NeonButton
 
 
 class NoticeWindow(object):
@@ -21,6 +22,31 @@ class NoticeWindow(object):
 
     def confirm(self, *args):
         self.done = True
+
+    def get_event(self, event):
+        self.ok.get_event(event)
+
+    def update(self, mouse_pos):
+        self.ok.update(mouse_pos)
+
+    def draw(self, surface):
+        surface.blit(self.window, self.rect)
+        self.label.draw(surface)
+        self.ok.draw(surface)
+
+
+class InfoWindow(NoticeWindow):
+    """
+    A popup window for displaying information to the user. The callback
+    function will be called when the user clicks on the "OK" button.
+    """
+    def __init__(self, center, text, callback):
+        super(InfoWindow, self).__init__(center, text)
+        self.callback = callback
+
+    def confirm(self, *args):
+        self.done = True
+        self.callback()
 
     def get_event(self, event):
         self.ok.get_event(event)

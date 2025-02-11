@@ -15,9 +15,9 @@ def train_model(yaml_path, epochs=10, batch_size=16, img_size=640, device="0", p
         device=device,
         project=project,
         name=name,
-        degrees=0.25,
-        scale=0.3,
-        perspective=0.0001
+        # degrees=0.25,
+        # scale=0.3,
+        # perspective=0.0001
     )
 
     return model
@@ -63,9 +63,16 @@ def is_within_margin(box1, box2, margin):
         abs(y_max1 - y_max2) <= y_margin
     )
 
-def stable_predict(model, conf=0.5, stability_frames=5, margin=0.5):
+def stable_predict(model, conf=0.5, stability_frames=5, position_frames=5, margin=0.5):
+    if position_frames > stability_frames:
+        print(
+            """WARNING: Position frames cannot be greater than stability frames.
+            Setting position frames to stability frames."""
+        )
+        position_frames = stability_frames
+
     bbox_tracker = {}
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(1)
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
@@ -109,7 +116,7 @@ def stable_predict(model, conf=0.5, stability_frames=5, margin=0.5):
                         break
 
                 if not matched:
-                    positions = Queue(maxsize=stability_frames)
+                    positions = Queue(maxsize=position_frames)
                     positions.put((x1, y1, x2, y2))
                     bbox_tracker[bbox_key] = {
                         "count": 1,
@@ -122,7 +129,7 @@ def stable_predict(model, conf=0.5, stability_frames=5, margin=0.5):
 
         for tracked_box in list(bbox_tracker.keys()): # copy keys
             deleted = False
-            if not any(is_within_margin(tracked_box, box, margin=1.0) for box in frame_boxes):
+            if not any(is_within_margin(tracked_box, box, margin=margin) for box in frame_boxes):
                 bbox_tracker[tracked_box]["count"] -= 1
                 if bbox_tracker[tracked_box]["count"] <= 0:
                     del bbox_tracker[tracked_box]
@@ -134,8 +141,19 @@ def stable_predict(model, conf=0.5, stability_frames=5, margin=0.5):
                 avg_x2 = int(sum([pos[2] for pos in bbox_tracker[tracked_box]["positions"].queue]) / len(bbox_tracker[tracked_box]["positions"].queue))
                 avg_y2 = int(sum([pos[3] for pos in bbox_tracker[tracked_box]["positions"].queue]) / len(bbox_tracker[tracked_box]["positions"].queue))
 
+                text_x = avg_x1
+                text_y = (avg_y1 - 10) if avg_y1 > 10 else (avg_y2 + 30)
+
                 cv2.rectangle(frame, (avg_x1, avg_y1), (avg_x2, avg_y2), (0, 0, 255), 2)
-                cv2.putText(frame, f"{bbox_tracker[tracked_box]['cls']}, {bbox_tracker[tracked_box]['conf']:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+                cv2.putText(
+                    frame,
+                    f"{bbox_tracker[tracked_box]['cls']}, {bbox_tracker[tracked_box]['conf']:.2f}",
+                    (text_x, text_y),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.9,
+                    (0, 0, 255),
+                    2
+                )
 
         print(bbox_tracker)
 
@@ -150,7 +168,7 @@ def stable_predict(model, conf=0.5, stability_frames=5, margin=0.5):
 if __name__ == "__main__":
     epochs = 10
     batch_size = 16
-    img_size = 480
+    img_size = 640
     train = False
 
     dataset_path = os.path.join(os.path.dirname(__file__), "..", "datasets")
@@ -162,7 +180,7 @@ if __name__ == "__main__":
         yolo_model = load_model(os.path.join(
             os.path.dirname(__file__),
             "craps-ai",
-            "yolov8n2",
+            "yolov8n4",
             "weights",
             "best.pt"
         ))
@@ -170,33 +188,39 @@ if __name__ == "__main__":
     # metrics = yolo_model.val()
     # print(metrics)
     
-    # stable_predict(yolo_model, conf=0.5, stability_frames=20, margin=1.0)
+    stable_predict(
+        yolo_model,
+        conf=0.5,
+        stability_frames=20,
+        position_frames=10,
+        margin=0.25
+    )
 
-    cap = cv2.VideoCapture(0)
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
+    # cap = cv2.VideoCapture(0)
+    # while cap.isOpened():
+    #     ret, frame = cap.read()
+    #     if not ret:
+    #         break
 
-        results = yolo_model.predict(frame, conf=0.5, verbose=False)
-        if results:
-            result = results[0]
-            for box in result.boxes:
-                x, y, w, h = box.xywh[0]
-                cls_idx = box.cls.item()
-                conf = box.conf.item()
+    #     results = yolo_model.predict(frame, conf=0.5, verbose=False)
+    #     if results:
+    #         result = results[0]
+    #         for box in result.boxes:
+    #             x, y, w, h = box.xywh[0]
+    #             cls_idx = box.cls.item()
+    #             conf = box.conf.item()
 
-                x1 = int(x - w / 2)
-                y1 = int(y - h / 2)
-                x2 = int(x + w / 2)
-                y2 = int(y + h / 2)
+    #             x1 = int(x - w / 2)
+    #             y1 = int(y - h / 2)
+    #             x2 = int(x + w / 2)
+    #             y2 = int(y + h / 2)
 
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
-                cv2.putText(frame, f"{result.names[cls_idx]}, {conf:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+    #             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+    #             cv2.putText(frame, f"{result.names[cls_idx]}, {conf:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
 
-        cv2.imshow("frame", frame)
-        if cv2.waitKey(1) == ord("q"):
-            break
+    #     cv2.imshow("frame", frame)
+    #     if cv2.waitKey(1) == ord("q"):
+    #         break
 
-    cap.release()
-    cv2.destroyAllWindows()
+    # cap.release()
+    # cv2.destroyAllWindows()
