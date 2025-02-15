@@ -8,7 +8,7 @@ if __name__ == "__main__":
     obb_format = True
 
     dataset_path = os.path.join(os.path.dirname(__file__), "..", "datasets")
-    train_path = os.path.join(dataset_path, "synth-dice-2000-ORIENTED_2025-02-11-13-37-04")
+    train_path = os.path.join(dataset_path, "dice_d6", "train")
 
     rng = np.random.default_rng()
     image_paths = glob(os.path.join(train_path, "images", "*.jpg"))
