@@ -167,6 +167,51 @@ def crop_obb_corners(frame, corners):
     return cropped
 
 
+def obb_corners_to_xywhr(corners):
+    if corners is None or len(corners) == 0:
+        raise ValueError("Error: Corners array is empty or None")
+
+    corners = np.array(corners, dtype=np.float32).reshape(-1, 2)
+
+    if corners.shape != (4, 2):
+        raise ValueError(f"Error: Expected shape (4,2), but got {corners.shape}")
+
+    rect = cv2.minAreaRect(corners)
+    (x_center, y_center), (width, height), angle = rect
+    
+    # # Ensure angle consistency
+    # if width < height:
+    #     width, height = height, width
+    #     angle += 90
+
+    return np.asarray([x_center, y_center, width, height, angle], dtype=np.float32)
+
+
+def compute_avg_angles(angles):
+    # Compute stable circular mean of angles to prevent 90 degree flips
+    angles = np.deg2rad(angles)
+    avg_sin = np.mean(np.sin(angles))
+    avg_cos = np.mean(np.cos(angles))
+    avg_angle = np.arctan2(avg_sin, avg_cos)
+    return np.rad2deg(avg_angle)
+
+
+def weighted_moving_average(values, alpha, recent_first=False):
+    # Compute weighted moving average of values, where alpha is the decay factor
+    # If recent_first is True, then the first values are weighted more heavily
+    if values is None or len(values) == 0:
+        raise ValueError("Error: Values array is empty or None")
+
+    values = np.asarray(values)
+    if not recent_first:
+        values = np.flip(values, axis=0)
+
+    weights = np.power(alpha, np.arange(len(values)))
+    weights /= np.sum(weights)
+    
+    return np.sum(values * weights[:, np.newaxis], axis=0)
+
+
 def stable_predict(
     result_queue,
     cap,
@@ -208,9 +253,11 @@ def stable_predict(
 
             if not boxes:
                 # print("No boxes found.")
-                cv2.imshow("frame", frame)
-                if cv2.waitKey(1) == ord("q"):
-                    break
+
+                if debug:
+                    cv2.imshow("frame", frame)
+                    if cv2.waitKey(1) == ord("q"):
+                        break
 
                 continue
 
@@ -241,7 +288,8 @@ def stable_predict(
 
                 matched = False
                 for tracked_box in bbox_tracker:
-                    if is_within_margin(tracked_box, bbox_key, margin=translate_margin, use_obb=use_obb):
+                    last_position = bbox_tracker[tracked_box]["positions"].queue[-1]
+                    if is_within_margin(last_position, bbox_key, margin=translate_margin, use_obb=use_obb):
                         count = bbox_tracker[tracked_box]["count"]
                         bbox_tracker[tracked_box]["count"] = min(count + 1, stability_frames)
 
@@ -271,7 +319,8 @@ def stable_predict(
 
         for tracked_box in list(bbox_tracker.keys()): # copy keys because we may delete from the dict
             deleted = False
-            if not any(is_within_margin(tracked_box, box, margin=translate_margin, use_obb=use_obb) for box in frame_boxes):
+            last_position = bbox_tracker[tracked_box]["positions"].queue[-1]
+            if not any(is_within_margin(last_position, box, margin=translate_margin, use_obb=use_obb) for box in frame_boxes):
                 bbox_tracker[tracked_box]["count"] -= 1
                 if bbox_tracker[tracked_box]["count"] <= 0:
                     del bbox_tracker[tracked_box]
@@ -284,118 +333,57 @@ def stable_predict(
 
             if not deleted and bbox_tracker[tracked_box]["count"] >= stability_frames:
                 positions = np.array(bbox_tracker[tracked_box]["positions"].queue)
-                copy_frame = frame.copy()
+                copy_frame = np.array(frame)
 
                 if use_obb:
-                    avg_points = np.mean(positions.reshape(-1, 4, 2), axis=0).astype(int)
-                    avg_points = avg_points.reshape((-1, 1, 2))
-                    cv2.polylines(frame, [avg_points], isClosed=True, color=(0, 0, 255), thickness=2)
+                    obb_with_angles = np.array([obb_corners_to_xywhr(np.asarray(pos)) for pos in positions])
+                    
+                    avg_obb = weighted_moving_average(obb_with_angles[:, :4], alpha=0.8, recent_first=False)
+                    avg_angle = compute_avg_angles(obb_with_angles[:, 4])
 
-                    text_x, text_y = avg_points[0, 0]
-                    text_y = (text_y - 10) if text_y > 10 else (avg_points[3, 0, 1] + 30)
+                    # Convert back to corner points
+                    avg_rect = ((avg_obb[0], avg_obb[1]), (avg_obb[2], avg_obb[3]), avg_angle)
+                    avg_points = cv2.boxPoints(avg_rect).astype(int)
+
+                    if debug:
+                        cv2.polylines(frame, [avg_points], isClosed=True, color=(0, 0, 255), thickness=2)
+
+                        text_x, text_y = avg_points[0]
+                        text_y = (text_y - 10) if text_y > 10 else (avg_points[3][1] + 30)
                 else:
                     avg_x1, avg_y1, avg_x2, avg_y2 = np.mean(positions, axis=0).astype(int)
-                    cv2.rectangle(frame, (avg_x1, avg_y1), (avg_x2, avg_y2), (0, 0, 255), 2)
 
-                    text_x = avg_x1
-                    text_y = (avg_y1 - 10) if avg_y1 > 10 else (avg_y2 + 30)
+                    if debug:
+                        cv2.rectangle(frame, (avg_x1, avg_y1), (avg_x2, avg_y2), (0, 0, 255), 2)
 
-                cv2.putText(
-                    frame,
-                    f"{bbox_tracker[tracked_box]['cls']}, {bbox_tracker[tracked_box]['conf']:.2f}",
-                    (text_x, text_y),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.9,
-                    (0, 0, 255),
-                    2
-                )
+                        text_x = avg_x1
+                        text_y = (avg_y1 - 10) if avg_y1 > 10 else (avg_y2 + 30)
+
+                if debug:
+                    cv2.putText(
+                        frame,
+                        f"{bbox_tracker[tracked_box]['cls']}, {bbox_tracker[tracked_box]['conf']:.2f}",
+                        (text_x, text_y),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.9,
+                        (0, 255, 0),
+                        2
+                    )
 
                 if current_detections.full():
                     current_detections.pop()
                 current_detections[tracked_box] = (
                     bbox_tracker[tracked_box]["cls"],
-                    crop_obb_corners(copy_frame, tracked_box) if use_obb else copy_frame[avg_y1:avg_y2, avg_x1:avg_x2, ...]
+                    crop_obb_corners(copy_frame, avg_points.squeeze()) if use_obb\
+                    else copy_frame[avg_y1:avg_y2, avg_x1:avg_x2, ...]
                 )
 
         # print(bbox_tracker)
 
-        cv2.imshow("frame", frame)
-        if cv2.waitKey(1) == ord("q"):
-            break
-
-    cv2.destroyAllWindows()
-    return
-
-
-def yolo_worker(
-    results,
-    cap,
-    model,
-    confidence,
-    stability_frames,
-    position_frames,
-    translate_margin,
-    debug
-):
-    while cap.isOpened():
-        print("Reading frame...")
-        ret, frame = cap.read()
-        if not ret:
-            continue
-
-        results = model.predict(frame, conf=confidence, verbose=False)
-        if results:
-            print("Processing results...")
-            result = results[0]
-
-            use_obb = False
-            if result.obb:
-                use_obb = True
-                boxes = result.obb
-            else:
-                boxes = result.boxes
-
-            if not boxes:
-                cv2.imshow("frame", frame)
-                if cv2.waitKey(1) == ord("q"):
-                    break
-
-                continue
-
-            for box in boxes:
-                cls_idx = box.cls.item()
-                box_conf = box.conf.item()
-
-                if use_obb:
-                    p1, p2, p3, p4 = box.xyxyxyxy[0].cpu().numpy()
-
-                    points = np.array([p1, p2, p3, p4], np.int32)
-                    points = points.reshape((-1, 1, 2))
-
-                    cv2.polylines(frame, [points], isClosed=True, color=(0, 255, 0), thickness=2)
-
-                    if result_queue.full():
-                        result_queue.get()
-                    result_queue.put((result.names[cls_idx], crop_obb_corners(frame, [p1, p2, p3, p4])))
-                else:
-                    x, y, w, h = box.xywh[0]
-
-                    x1 = int(x - w / 2)
-                    y1 = int(y - h / 2)
-                    x2 = int(x + w / 2)
-                    y2 = int(y + h / 2)
-
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-
-                    if result_queue.full():
-                        result_queue.get()
-                    result_queue.put((result.names[cls_idx], frame[y1:y2, x1:x2, ...]))
-
-                cv2.putText(frame, f"{result.names[cls_idx]}, {box_conf:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
-
-        cv2.imshow("frame", frame)
-        if cv2.waitKey(1) == ord("q"):
-            break
+        if debug:
+            cv2.imshow("frame", frame)
+            if cv2.waitKey(1) == ord("q"):
+                break
 
     cv2.destroyAllWindows()
     return
@@ -428,14 +416,14 @@ if __name__ == "__main__":
     # metrics = yolo_model.val()
     # print(metrics)
 
-    stable_predict(
-        yolo_model,
-        conf=0.6,
-        stability_frames=20,
-        position_frames=10,
-        margin=0.25,
-        source=camera_source
-    )
+    # stable_predict(
+    #     yolo_model,
+    #     conf=0.6,
+    #     stability_frames=20,
+    #     position_frames=10,
+    #     translate_margin=0.25,
+    #     source=camera_source
+    # )
 
     # cap = cv2.VideoCapture(camera_source)
     # while cap.isOpened():
@@ -458,7 +446,7 @@ if __name__ == "__main__":
     #             continue
 
     #         for box in boxes:
-    #             if obb_format:
+    #             if use_obb:
     #                 p1, p2, p3, p4 = box.xyxyxyxy[0].cpu().numpy()
     #                 x1, y1 = int(p1[0]), int(p1[1])
 

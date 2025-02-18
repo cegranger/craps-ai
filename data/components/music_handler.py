@@ -30,7 +30,7 @@ class MusicHandler(object):
         self.rect = pg.Rect(0, 0, 300, 70)
         self.rect.right = prepare.RENDER_SIZE[0]
         self.music_on = not prepare.ARGS['music_off']
-        self.volume_mod = 1.0
+        self.volume_mod = 0.7
         self.prep_volume_icons()
         self.buttons = self.make_buttons()
         font = prepare.FONTS["Saniretro"]

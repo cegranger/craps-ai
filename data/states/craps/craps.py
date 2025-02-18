@@ -65,7 +65,8 @@ class Craps(data.state.State):
             "models",
             "craps-ai",
             # "yolov8n",
-            "yolov8n4",
+            # "yolov8n4",
+            "yolov8n-obb",
             "weights",
             "best.pt"
         ))
@@ -230,17 +231,22 @@ class Craps(data.state.State):
         self.previous_detections = yolo.QueueDict(maxsize=0)
         self.current_detections = yolo.QueueDict(maxsize=len(self.dice))
 
+        confidence = 0.8
+        stability_frames = 10
+        position_frames = 1
+        translate_margin = 0.75
+        debug = True
         self.yolo_thread = threading.Thread(
             target=yolo.stable_predict,
             args=(
                 (self.previous_detections, self.current_detections),
                 self.cap,
                 self.model,
-                0.6,
-                20,
-                10,
-                0.25,
-                False
+                confidence,
+                stability_frames,
+                position_frames,
+                translate_margin,
+                debug
             ),
             daemon=True
         )
