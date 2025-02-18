@@ -347,7 +347,7 @@ class NeonButton(Button):
 
 
 class GameButton(Button):
-    ss_size = (320, 240)
+    ss_size = (640, 480)
     width = ss_size[0]+20
     height = ss_size[1]+20
     font = prepare.FONTS["Saniretro"]
@@ -385,7 +385,9 @@ class GameButton(Button):
         highlight = image.copy()
         pg.draw.rect(image, pg.Color("gold3"), icon_rect, 4)
         pg.draw.rect(image, pg.Color("gold3"), frame, 4)
-        highlight.blit(prepare.GFX["game_highlight"], (0,0))
+        highlight_rect = image.get_rect()
+        highlight_rect.inflate_ip(20, 20)
+        highlight.blit(pg.transform.scale(prepare.GFX["game_highlight"], highlight_rect.size), (-10,-10))
         for surface in (image, highlight):
             label.draw(surface)
         return (image, highlight)

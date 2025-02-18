@@ -1,9 +1,68 @@
 import os
+from collections import OrderedDict
 from queue import Queue
 
 import cv2
 import numpy as np
 from ultralytics import YOLO
+
+
+class QueueDict:
+    def __init__(self, maxsize):
+        self.maxsize = maxsize
+        self.data = OrderedDict()
+
+    def put(self, key, value):
+        if self.maxsize > 0 and len(self.data) >= self.maxsize:
+            raise ValueError("Queue is full.")
+        
+        self.data[key] = value
+
+    def pop(self):
+        if not self.data:
+            raise ValueError("Queue is empty.")
+
+        return self.data.popitem(last=False)
+
+    def remove(self, key):
+        if key in self.data:
+            del self.data[key]
+
+    def keys(self):
+        return self.data.keys()
+
+    def values(self):
+        return self.data.values()
+
+    def items(self):
+        return self.data.items()
+
+    def full(self):
+        return self.maxsize > 0 and len(self.data) >= self.maxsize
+
+    def empty(self):
+        return not self.data
+
+    def __contains__(self, key):
+        return key in self.data
+
+    def __getitem__(self, key):
+        return self.data[key]
+
+    def __setitem__(self, key, value):
+        self.put(key, value)
+
+    def __delitem__(self, key):
+        self.remove(key)
+
+    def __len__(self):
+        return len(self.data)
+
+    def __iter__(self):
+        return iter(self.data)
+
+    def __repr__(self):
+        return repr(self.data)
 
 
 def train_model(yaml_path, epochs=10, batch_size=16, img_size=640, device="0", project="craps-ai", name="yolov8n"):
@@ -90,7 +149,34 @@ def is_within_margin(box1, box2, margin, use_obb):
         )
 
 
-def stable_predict(model, conf=0.5, stability_frames=5, position_frames=5, margin=0.5, source=0):
+def crop_obb_corners(frame, corners):
+    corners = np.array(corners, dtype=np.float32)
+
+    width = int(np.linalg.norm(corners[0] - corners[1]))  # Distance between top-left & top-right
+    height = int(np.linalg.norm(corners[0] - corners[3]))  # Distance between top-left & bottom-left
+
+    dst_pts = np.array([
+        [0, 0],  # Top-left
+        [width - 1, 0],  # Top-right
+        [width - 1, height - 1],  # Bottom-right
+        [0, height - 1]  # Bottom-left
+    ], dtype=np.float32)
+
+    M = cv2.getPerspectiveTransform(corners, dst_pts)
+    cropped = cv2.warpPerspective(frame, M, (width, height))
+    return cropped
+
+
+def stable_predict(
+    result_queue,
+    cap,
+    model,
+    confidence,
+    stability_frames,
+    position_frames,
+    translate_margin,
+    debug
+):
     if position_frames > stability_frames:
         print(
             """WARNING: Position frames cannot be greater than stability frames.
@@ -98,22 +184,22 @@ def stable_predict(model, conf=0.5, stability_frames=5, position_frames=5, margi
         )
         position_frames = stability_frames
 
+    previous_detections, current_detections = result_queue
+
     bbox_tracker = {}
-    cap = cv2.VideoCapture(source)
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             print("Failed to read frame.")
             break
 
-        print(f"Processing frame of shape: {frame.shape}")
+        # print(f"Processing frame of shape: {frame.shape}")
         frame_boxes = []
 
         use_obb = False
-        results = model.predict(frame, conf=conf, verbose=False)
+        results = model.predict(frame, conf=confidence, verbose=False)
         if results:
             result = results[0]
-
             if result.obb:
                 boxes = result.obb
                 use_obb = True
@@ -121,7 +207,11 @@ def stable_predict(model, conf=0.5, stability_frames=5, position_frames=5, margi
                 boxes = result.boxes
 
             if not boxes:
-                print("No boxes found.")
+                # print("No boxes found.")
+                cv2.imshow("frame", frame)
+                if cv2.waitKey(1) == ord("q"):
+                    break
+
                 continue
 
             for box in boxes:
@@ -131,9 +221,12 @@ def stable_predict(model, conf=0.5, stability_frames=5, position_frames=5, margi
                     x2, y2 = int(p2[0]), int(p2[1])
                     x3, y3 = int(p3[0]), int(p3[1])
                     x4, y4 = int(p4[0]), int(p4[1])
-                    
+
                     position = (x1, y1, x2, y2, x3, y3, x4, y4)
-                    bbox_key = position # position as key is good enough? a new thrown dice would have to match the exact initial position of a previous dice to cause key collision
+
+                    # position as key is good enough?
+                    # a new dice would have to match the initial position of a previous dice to cause key collision
+                    bbox_key = position
                 else:
                     x, y, w, h = box.xywh[0]
                     x1, y1 = int(x - w / 2), int(y - h / 2)
@@ -144,11 +237,11 @@ def stable_predict(model, conf=0.5, stability_frames=5, position_frames=5, margi
 
                 frame_boxes.append(bbox_key)
                 cls_idx = box.cls.item()
-                pred_conf = box.conf.item()
+                box_conf = box.conf.item()
 
                 matched = False
                 for tracked_box in bbox_tracker:
-                    if is_within_margin(tracked_box, bbox_key, margin=margin, use_obb=use_obb):
+                    if is_within_margin(tracked_box, bbox_key, margin=translate_margin, use_obb=use_obb):
                         count = bbox_tracker[tracked_box]["count"]
                         bbox_tracker[tracked_box]["count"] = min(count + 1, stability_frames)
 
@@ -159,7 +252,7 @@ def stable_predict(model, conf=0.5, stability_frames=5, position_frames=5, margi
                         bbox_tracker[tracked_box]["positions"] = positions
 
                         bbox_tracker[tracked_box]["cls"] = result.names[cls_idx]
-                        bbox_tracker[tracked_box]["conf"] = pred_conf
+                        bbox_tracker[tracked_box]["conf"] = box_conf
 
                         matched = True
                         break
@@ -171,21 +264,27 @@ def stable_predict(model, conf=0.5, stability_frames=5, position_frames=5, margi
                         "count": 1,
                         "positions": positions,
                         "cls": result.names[cls_idx],
-                        "conf": pred_conf
+                        "conf": box_conf
                     }
         else:
             print("No results found.")
 
         for tracked_box in list(bbox_tracker.keys()): # copy keys because we may delete from the dict
             deleted = False
-            if not any(is_within_margin(tracked_box, box, margin=margin, use_obb=use_obb) for box in frame_boxes):
+            if not any(is_within_margin(tracked_box, box, margin=translate_margin, use_obb=use_obb) for box in frame_boxes):
                 bbox_tracker[tracked_box]["count"] -= 1
                 if bbox_tracker[tracked_box]["count"] <= 0:
                     del bbox_tracker[tracked_box]
                     deleted = True
 
+                    if tracked_box in previous_detections:
+                        del previous_detections[tracked_box]
+                    if tracked_box in current_detections:
+                        del current_detections[tracked_box]
+
             if not deleted and bbox_tracker[tracked_box]["count"] >= stability_frames:
                 positions = np.array(bbox_tracker[tracked_box]["positions"].queue)
+                copy_frame = frame.copy()
 
                 if use_obb:
                     avg_points = np.mean(positions.reshape(-1, 4, 2), axis=0).astype(int)
@@ -211,13 +310,93 @@ def stable_predict(model, conf=0.5, stability_frames=5, position_frames=5, margi
                     2
                 )
 
-        print(bbox_tracker)
+                if current_detections.full():
+                    current_detections.pop()
+                current_detections[tracked_box] = (
+                    bbox_tracker[tracked_box]["cls"],
+                    crop_obb_corners(copy_frame, tracked_box) if use_obb else copy_frame[avg_y1:avg_y2, avg_x1:avg_x2, ...]
+                )
+
+        # print(bbox_tracker)
 
         cv2.imshow("frame", frame)
         if cv2.waitKey(1) == ord("q"):
             break
 
-    cap.release()
+    cv2.destroyAllWindows()
+    return
+
+
+def yolo_worker(
+    results,
+    cap,
+    model,
+    confidence,
+    stability_frames,
+    position_frames,
+    translate_margin,
+    debug
+):
+    while cap.isOpened():
+        print("Reading frame...")
+        ret, frame = cap.read()
+        if not ret:
+            continue
+
+        results = model.predict(frame, conf=confidence, verbose=False)
+        if results:
+            print("Processing results...")
+            result = results[0]
+
+            use_obb = False
+            if result.obb:
+                use_obb = True
+                boxes = result.obb
+            else:
+                boxes = result.boxes
+
+            if not boxes:
+                cv2.imshow("frame", frame)
+                if cv2.waitKey(1) == ord("q"):
+                    break
+
+                continue
+
+            for box in boxes:
+                cls_idx = box.cls.item()
+                box_conf = box.conf.item()
+
+                if use_obb:
+                    p1, p2, p3, p4 = box.xyxyxyxy[0].cpu().numpy()
+
+                    points = np.array([p1, p2, p3, p4], np.int32)
+                    points = points.reshape((-1, 1, 2))
+
+                    cv2.polylines(frame, [points], isClosed=True, color=(0, 255, 0), thickness=2)
+
+                    if result_queue.full():
+                        result_queue.get()
+                    result_queue.put((result.names[cls_idx], crop_obb_corners(frame, [p1, p2, p3, p4])))
+                else:
+                    x, y, w, h = box.xywh[0]
+
+                    x1 = int(x - w / 2)
+                    y1 = int(y - h / 2)
+                    x2 = int(x + w / 2)
+                    y2 = int(y + h / 2)
+
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+                    if result_queue.full():
+                        result_queue.get()
+                    result_queue.put((result.names[cls_idx], frame[y1:y2, x1:x2, ...]))
+
+                cv2.putText(frame, f"{result.names[cls_idx]}, {box_conf:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+
+        cv2.imshow("frame", frame)
+        if cv2.waitKey(1) == ord("q"):
+            break
+
     cv2.destroyAllWindows()
     return
 
@@ -248,7 +427,7 @@ if __name__ == "__main__":
 
     # metrics = yolo_model.val()
     # print(metrics)
-    
+
     stable_predict(
         yolo_model,
         conf=0.6,

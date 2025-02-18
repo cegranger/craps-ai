@@ -1,11 +1,14 @@
 import os
+import queue
 import random
+import threading
 from collections import OrderedDict
 
 import cv2
+import pygame as pg
+
 import data.state
 import models.yolo as yolo
-import pygame as pg
 from data import prepare, tools
 from data.components.labels import ButtonGroup, Label, NeonButton, TextBox
 from data.components.warning_window import InfoWindow
@@ -29,7 +32,7 @@ class Craps(data.state.State):
         self.set_table()
         self.bets = craps_data.BETS
 
-        self.dice = [dice.Die(self.screen_rect)]#, dice.Die(self.screen_rect, 50)]
+        self.dice = [dice.Die(self.screen_rect), dice.Die(self.screen_rect, 50)]
         self.dice_total = 0
         self.update_total_label()
         self.history = [] #[(1,1),(5,4)]
@@ -53,8 +56,8 @@ class Craps(data.state.State):
 
         self.popup = None
 
-        # Video capture
-        self.cap = cv2.VideoCapture(1)
+        self.cap = None
+        self.yolo_thread = None
 
         self.model = yolo.load_model(os.path.join(
             os.path.dirname(__file__),
@@ -94,7 +97,7 @@ class Craps(data.state.State):
         buttons = ButtonGroup()
         y = screen_rect.bottom-NeonButton.height-10
         lobby = NeonButton((20,y), "Lobby", self.back_to_lobby, None, buttons)
-        NeonButton((lobby.rect.right+20,y), "Roll", self.roll, None, buttons)
+        # NeonButton((lobby.rect.right+20,y), "Roll", self.roll, None, buttons)
         return buttons
 
     def back_to_lobby(self, *args):
@@ -102,8 +105,12 @@ class Craps(data.state.State):
         self.next = "lobby"
         self.done = True
 
-        # Release video capture
+        # Release video capture and join thread
         self.cap.release()
+        self.cap = None
+
+        self.yolo_thread.join()
+        self.yolo_thread = None
 
     def debug_roll(self, id, text):
         self.roll()
@@ -131,13 +138,19 @@ class Craps(data.state.State):
 
         self.point = 0
 
-    def roll(self, *args):
+    def roll(self, **kwargs):
         if not self.dice[0].rolling:
             self.update_history()
             random.choice(self.dice_sounds).play()
 
-            # dice_value, crops = take_picture(self.cap)
-            dice_values, crops = yolo.take_picture(self.cap, self.model)
+            dice_values = kwargs.get("dice_values", None)
+            crops = kwargs.get("crops", None)
+
+            if not dice_values or not crops:
+                self.cap.read()
+                # dice_value, crops = take_picture(self.cap)
+                dice_values, crops = yolo.take_picture(self.cap, self.model)
+
             print(f'Dice Count: {len(dice_values)}')
             if len(dice_values) == len(self.dice):
                 for i, die in enumerate(self.dice):
@@ -200,6 +213,38 @@ class Craps(data.state.State):
         for die in self.dice:
             die.draw_dice = False
         self.history = []
+
+        if self.cap and self.cap.isOpened():
+            self.cap.release()
+            self.cap = None
+
+        if self.yolo_thread and self.yolo_thread.is_alive():
+            self.yolo_thread.join()
+            self.yolo_thread = None
+
+        # Video capture
+        self.cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+        # QueueDict instances to store dice detection results
+        self.previous_detections = yolo.QueueDict(maxsize=0)
+        self.current_detections = yolo.QueueDict(maxsize=len(self.dice))
+
+        self.yolo_thread = threading.Thread(
+            target=yolo.stable_predict,
+            args=(
+                (self.previous_detections, self.current_detections),
+                self.cap,
+                self.model,
+                0.6,
+                20,
+                10,
+                0.25,
+                False
+            ),
+            daemon=True
+        )
+        self.yolo_thread.start()
 
     def get_event(self, event, scale=(1,1)):
         if event.type == pg.QUIT:
@@ -295,3 +340,20 @@ class Craps(data.state.State):
         self.update_total_label()
         for widget in self.widgets:
             widget.update()
+
+        # print("Previous:", self.previous_detections.keys())
+        # print("Current:", self.current_detections.keys())
+        if len(self.current_detections) == len(self.dice):
+            has_new_dice = set(self.current_detections.keys()) - set(self.previous_detections.keys())
+            if has_new_dice:
+                dice_values = []
+                crops = []
+                for key, value in self.current_detections.items():
+                    if self.previous_detections.full():
+                        self.previous_detections.pop()
+                    self.previous_detections[key] = value
+
+                    dice_values.append(int(value[0]))
+                    crops.append(value[1])
+
+                self.roll(dice_values=dice_values, crops=crops)

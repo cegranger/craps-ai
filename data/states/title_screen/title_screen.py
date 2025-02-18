@@ -114,7 +114,8 @@ class TitleScreen(data.state.State):
         else:
             self.marquees.update(dt)
             self.new_game.visible = True
-            self.load_game.visible = self.controller.saved_stats_are_available
+            # self.load_game.visible = self.controller.saved_stats_are_available
+            self.load_game.visible = False
         self.lights.update(dt)
         self.draw(surface, dt)
 

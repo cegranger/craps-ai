@@ -48,14 +48,15 @@ class LobbyScreen(data.state.State):
         number_of_pages = int(math.ceil(len(games)/float(self.per_page)))
         self.loop_length = prepare.RENDER_SIZE[0] * number_of_pages
         self.game_buttons = self.make_game_pages(games, screen_rect, self.per_page)
-        nav_buttons = self.make_navigation_buttons(screen_rect)
+        # nav_buttons = self.make_navigation_buttons(screen_rect)
         main_buttons = self.make_main_buttons(screen_rect)
-        self.buttons = ButtonGroup(nav_buttons, main_buttons)
+        # self.buttons = ButtonGroup(nav_buttons, main_buttons)
+        self.buttons = ButtonGroup(main_buttons)
 
     def make_game_pages(self, games, screen_rect, per):
         games = list(games.keys())
         groups = (games[i:i+per] for i in range(0,len(games),per))
-        columns = 3
+        columns = 1
         width, height = GameButton.width, GameButton.height
         spacer_x, spacer_y = 50, 80
         start_x = (screen_rect.w-width*columns-spacer_x*(columns-1))//2
@@ -101,9 +102,9 @@ class LobbyScreen(data.state.State):
         NeonButton(pos, "Exit", self.exit_game, None,
                    buttons, bindings=[pg.K_ESCAPE])
         rect_style = (screen_rect.left, screen_rect.top, 150, 95)
-        Button(rect_style, buttons, idle_image=prepare.GFX["atm_dim"],
-               hover_image=prepare.GFX["atm_bright"],
-               call=self.change_state, args="atm")
+        # Button(rect_style, buttons, idle_image=prepare.GFX["atm_dim"],
+        #        hover_image=prepare.GFX["atm_bright"],
+        #        call=self.change_state, args="atm")
         return buttons
 
     def scroll_page(self, mag):
