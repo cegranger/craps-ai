@@ -13,7 +13,7 @@ batch_size = 32
 
 # Prepare the data with ImageDataGenerator
 datagen = ImageDataGenerator(
-    rescale=1.0 / 255.0,  # Normalize pixel values to [0, 1]
+    rescale=1.0 / 255.0,  
     validation_split=0.2  # Split 20% of the data for validation
 )
 
@@ -68,3 +68,5 @@ loss, accuracy = model.evaluate(val_data)
 print(f"Précision: {accuracy * 100:.2f}%")
 model.summary()
 
+# Save the model
+model.save('models/craps-ai/opencv_cnn.h5')
