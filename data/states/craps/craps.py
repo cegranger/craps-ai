@@ -3,19 +3,22 @@ import queue
 import random
 import threading
 from collections import OrderedDict
+from tensorflow.keras.models import load_model
 
 import cv2
+import numpy as np
 import pygame as pg
 
 import data.state
-import models.yolo as yolo
 from data import prepare, tools
 from data.components.labels import ButtonGroup, Label, NeonButton, TextBox
 from data.components.warning_window import InfoWindow
-from data.states.craps.opencv_dice import take_picture
+from data.states.craps.opencv_crop import take_picture
 
 from . import craps_data, dice, point_chip
 
+full_path = 'k:/activite_1/craps-ai/'
+# full_path = ''
 
 class Craps(data.state.State):
     show_in_lobby = True
@@ -57,19 +60,9 @@ class Craps(data.state.State):
         self.popup = None
 
         self.cap = None
-        self.yolo_thread = None
 
-        self.model = yolo.load_model(os.path.join(
-            os.path.dirname(__file__),
-            "..", "..", "..",
-            "models",
-            "craps-ai",
-            # "yolov8n",
-            # "yolov8n4",
-            "yolov8n-obb",
-            "weights",
-            "best.pt"
-        ))
+        self.model = load_model(full_path + '/models/craps-ai/opencv_cnn.h5')
+        
 
     @staticmethod
     def initialize_stats():
@@ -98,7 +91,7 @@ class Craps(data.state.State):
         buttons = ButtonGroup()
         y = screen_rect.bottom-NeonButton.height-10
         lobby = NeonButton((20,y), "Lobby", self.back_to_lobby, None, buttons)
-        # NeonButton((lobby.rect.right+20,y), "Roll", self.roll, None, buttons)
+        NeonButton((lobby.rect.right+20,y), "Roll", self.roll, None, buttons)
         return buttons
 
     def back_to_lobby(self, *args):
@@ -109,9 +102,6 @@ class Craps(data.state.State):
         # Release video capture and join thread
         self.cap.release()
         self.cap = None
-
-        self.yolo_thread.join()
-        self.yolo_thread = None
 
     def debug_roll(self, id, text):
         self.roll()
@@ -139,19 +129,21 @@ class Craps(data.state.State):
 
         self.point = 0
 
-    def roll(self, **kwargs):
+    def roll(self, *args):
         if not self.dice[0].rolling:
             self.update_history()
-            random.choice(self.dice_sounds).play()
 
-            dice_values = kwargs.get("dice_values", None)
-            crops = kwargs.get("crops", None)
+            dice_values = []
+            crops = []
 
             if not dice_values or not crops:
                 self.cap.read()
-                # dice_value, crops = take_picture(self.cap)
-                dice_values, crops = yolo.take_picture(self.cap, self.model)
-
+                crops = take_picture(self.cap)
+                for crop in crops:
+                    dice_values.append(np.argmax(self.model.predict(np.expand_dims(crop, axis=0)))+1)
+                
+            
+            random.choice(self.dice_sounds).play()
             print(f'Dice Count: {len(dice_values)}')
             if len(dice_values) == len(self.dice):
                 for i, die in enumerate(self.dice):
@@ -219,38 +211,11 @@ class Craps(data.state.State):
             self.cap.release()
             self.cap = None
 
-        if self.yolo_thread and self.yolo_thread.is_alive():
-            self.yolo_thread.join()
-            self.yolo_thread = None
 
         # Video capture
         self.cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
         self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
-        # QueueDict instances to store dice detection results
-        self.previous_detections = yolo.QueueDict(maxsize=0)
-        self.current_detections = yolo.QueueDict(maxsize=len(self.dice))
-
-        confidence = 0.8
-        stability_frames = 10
-        position_frames = 1
-        translate_margin = 0.75
-        debug = True
-        self.yolo_thread = threading.Thread(
-            target=yolo.stable_predict,
-            args=(
-                (self.previous_detections, self.current_detections),
-                self.cap,
-                self.model,
-                confidence,
-                stability_frames,
-                position_frames,
-                translate_margin,
-                debug
-            ),
-            daemon=True
-        )
-        self.yolo_thread.start()
 
     def get_event(self, event, scale=(1,1)):
         if event.type == pg.QUIT:
@@ -347,19 +312,3 @@ class Craps(data.state.State):
         for widget in self.widgets:
             widget.update()
 
-        # print("Previous:", self.previous_detections.keys())
-        # print("Current:", self.current_detections.keys())
-        if len(self.current_detections) == len(self.dice):
-            has_new_dice = set(self.current_detections.keys()) - set(self.previous_detections.keys())
-            if has_new_dice:
-                dice_values = []
-                crops = []
-                for key, value in self.current_detections.items():
-                    if self.previous_detections.full():
-                        self.previous_detections.pop()
-                    self.previous_detections[key] = value
-
-                    dice_values.append(int(value[0]))
-                    crops.append(value[1])
-
-                self.roll(dice_values=dice_values, crops=crops)

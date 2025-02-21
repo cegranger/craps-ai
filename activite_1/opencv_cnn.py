@@ -1,11 +1,14 @@
 import tensorflow as tf
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras import layers, models
-import PIL #WHY ??
+import PIL 
 import os
 
+full_path = 'k:/activité_1/craps-ai/'
+# full_path = ''
+
 # Set dataset directory
-dataset_dir = "activité_1/opencv_dataset"
+dataset_dir = full_path + "activité_1/opencv_dataset"
 
 # Image size and parameters
 img_size = (64, 64)
@@ -69,4 +72,4 @@ print(f"Précision: {accuracy * 100:.2f}%")
 model.summary()
 
 # Save the model
-model.save('models/craps-ai/opencv_cnn.h5')
+model.save(full_path + '/models/craps-ai/opencv_cnn.h5')

@@ -1,6 +1,7 @@
 import sys
 import cv2
 import os
+import json
 import time
 import numpy as np
 from sklearn.cluster import DBSCAN
@@ -12,7 +13,8 @@ from PyQt5.QtWidgets import (
 )
 from qtwidgets import Toggle, AnimatedToggle
 
-
+full_path = 'k:/activite_1/crap-ai/'
+# full_path = ''
 
 class DiceDetectionApp(QMainWindow):
     def __init__(self):
@@ -94,14 +96,14 @@ class DiceDetectionApp(QMainWindow):
 
         # Add toggle switch for detection method
         self.detection_method = 0
-        self.detection_method_label = self.add_toggle(param_layout, "Méthode de détection", 1, state_label='par contours', toggle_function=self.toggle_detection_method)
+        self.detection_method_label = self.add_toggle(param_layout, "Methode de detection", 1, state_label='par contours', toggle_function=self.toggle_detection_method)
 
         # Add sliders for each parameter
         self.add_slider(param_layout, "Seuil noir/blanc", 1, 255, self.threshold_value, self.update_threshold, 2)
         self.add_slider(param_layout, "Zone minimale d'un point", 1, 1000, self.min_blob_area, self.update_min_blob_area, 3)
         self.add_slider(param_layout, "Zone maximale d'un point", 1, 1000, self.max_blob_area, self.update_max_blob_area, 4)
-        self.add_slider(param_layout, "Circularité", 1, 100, self.min_circularity, self.update_min_circularity, 5)
-        self.add_slider(param_layout, "Convexité", 1, 100, self.min_convexity, self.update_min_convexity, 6)
+        self.add_slider(param_layout, "Circularite", 1, 100, self.min_circularity, self.update_min_circularity, 5)
+        self.add_slider(param_layout, "Convexite", 1, 100, self.min_convexity, self.update_min_convexity, 6)
         self.add_slider(param_layout, "Inertie", 1, 100, self.min_inertia, self.update_min_inertia, 7)
         self.add_slider(param_layout, "Zone maximale de regroupement", 1, 1000, self.dbscan_eps, self.update_dbscan_eps, 8)
 
@@ -211,6 +213,7 @@ class DiceDetectionApp(QMainWindow):
         if state == Qt.Checked:
             self.capture = 1
             self.capture_label.setText("On")
+            self.save_to_json()
         else:
             self.capture = 0
             self.capture_label.setText("Off")
@@ -336,20 +339,20 @@ class DiceDetectionApp(QMainWindow):
                     if cropped_frame.size == 0:
                         print('CALL AN AMBULANCE! cropped image size is 0.')
                     else:
-                        directory = f"activité_1/opencv_dataset/{num_dots}"
+                        directory = f"activite_1/opencv_dataset/{num_dots}"
+                        directory = full_path + directory
                         os.makedirs(directory, exist_ok=True)
                         timestamp = time.strftime("%Y%m%d-%H%M%S")
                         filename = f"{directory}/{timestamp}.jpg"
-                        cv2.imwrite(filename, cropped_frame)
-                        self.show_popup(f"Image enregistrée: {filename}")
+                        print(cv2.imwrite(filename, cropped_frame))
+                        print(f"Image enregistree: {filename}")
+                        self.show_popup(f"Image enregistree: {filename}")
                     self.capture_stable_count += 1 # continue counting until new dice throw and reset to 0.
                 elif self.capture_stable_count == 0:   #   jumpstart the capture loop
-                    print('start')
                     self.contours = num_dots
                     self.capture_stable_count += 1
                 elif num_dots == self.contours:
                     self.capture_stable_count += 1
-                    print('stable')
                 else:
                     self.capture_stable_count = 0
                 self.contours = num_dots
@@ -404,12 +407,14 @@ class DiceDetectionApp(QMainWindow):
                         if cropped_frame.size == 0:
                             print('CALL AN AMBULANCE! cropped image size is 0.')
                         else:
-                            directory = f"activité_1/opencv_dataset/{num_dots}"
+                            directory = f"activite_1/opencv_dataset/{num_dots}"
+                            directory = full_path + directory
                             os.makedirs(directory, exist_ok=True)
                             timestamp = time.strftime("%Y%m%d-%H%M%S")
-                            filename = f"{directory}/{timestamp}.jpg"
-                            cv2.imwrite(filename, cropped_frame)
-                            self.show_popup(f"Image enregistrée: {filename}")
+                            filename = 'test.jpg' #f"{directory}/{timestamp}.jpg"
+                            print(cv2.imwrite(filename, cropped_frame))
+                            print(f"Image enregistree: {filename}")
+                            self.show_popup(f"Image enregistree: {filename}")
                         self.capture_stable_count += 1 # continue counting until new dice throw and reset to 0.
                     elif self.capture_stable_count == 0:   #   jumpstart the capture loop
                         self.labels = labels
@@ -461,6 +466,32 @@ class DiceDetectionApp(QMainWindow):
 
         # Close the popup after 1 second
         QTimer.singleShot(1000, popup.close)
+
+    def save_to_json(self, file_name="activite_1/opencv_params.json"):
+        """Save the class attributes to a JSON file."""
+        # Create a dictionary from the class attributes
+        data = {
+            "detection_method": self.detection_method,
+            "edge_detection": {
+                "threshold_value": self.threshold_value
+            },
+            "blob_detection": {
+                "min_blob_area": self.min_blob_area,
+                "max_blob_area": self.max_blob_area,
+                "min_circularity": self.min_circularity,
+                "min_convexity": self.min_convexity,
+                "min_inertia": self.min_inertia
+            },
+            "dbscan": {
+                "eps": self.dbscan_eps
+            }
+        }
+
+        # Write the dictionary to a JSON file
+        with open(file_name, "w") as json_file:
+            json.dump(data, json_file, indent=4)
+
+        print(f"Parameters saved to {file_name}")
 
 
     def update_frames(self):
