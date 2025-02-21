@@ -4,11 +4,11 @@ from tensorflow.keras import layers, models
 import PIL 
 import os
 
-full_path = 'k:/activité_1/craps-ai/'
+full_path = 'k:/activite_1/craps-ai/'
 # full_path = ''
 
 # Set dataset directory
-dataset_dir = full_path + "activité_1/opencv_dataset"
+dataset_dir = full_path + "activite_1/opencv_dataset"
 
 # Image size and parameters
 img_size = (64, 64)

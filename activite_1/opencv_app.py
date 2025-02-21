@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import (
 )
 from qtwidgets import Toggle, AnimatedToggle
 
-full_path = 'k:/activite_1/crap-ai/'
+full_path = 'k:/activite_1/craps-ai/'
 # full_path = ''
 
 class DiceDetectionApp(QMainWindow):
