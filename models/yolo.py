@@ -391,18 +391,18 @@ def stable_predict(
 
 if __name__ == "__main__":
     camera_source = 0
-    epochs = 10
+    epochs = 1
     batch_size = 32
     img_size = 640
     obb_format = True
-    train = False
+    train = True
 
     dataset_path = os.path.join(os.path.dirname(__file__), "..", "datasets")
     yaml_path = os.path.join(dataset_path, "dice_d6.yaml")
     model_name = "yolov8n-obb" if obb_format else "yolov8n" 
 
     if train:
-        yolo_model = train_model(yaml_path, epochs, batch_size, img_size, device="0", name=model_name)
+        yolo_model = train_model(yaml_path, epochs, batch_size, img_size, device="cpu", name=model_name)
     else:
         yolo_model = load_model(os.path.join(
             os.path.dirname(__file__),
