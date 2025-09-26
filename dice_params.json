@@ -1,0 +1,16 @@
+{
+    "detection_method": 1,
+    "edge_detection": {
+        "threshold_value": 178
+    },
+    "blob_detection": {
+        "min_blob_area": 1,
+        "max_blob_area": 1000,
+        "min_circularity": 0.64,
+        "min_convexity": 0.01,
+        "min_inertia": 0.38
+    },
+    "dbscan": {
+        "eps": 117
+    }
+}

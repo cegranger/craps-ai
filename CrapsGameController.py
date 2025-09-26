@@ -267,7 +267,7 @@ def game_with_frame_buffer(event_queue, frame_buffer):
     import pygame as pg
     from craps.craps import Craps 
     from craps.casino_player import CasinoPlayer
-    import craps.prepare as prepare
+    from craps import prepare
     
     def create_new_games_stats():
         stats = dict()
