@@ -1,0 +1,517 @@
+<style>
+        .main-container {
+            max-width: 100%;
+            margin: 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+        .video-container {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        .video-wrapper {
+            position: relative;
+            flex: 1;
+            max-width: 400px;
+        }
+        .video-title {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 8px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 14px;
+            border-radius: 8px 8px 0 0;
+        }
+        .video-frame {
+            position: relative;
+            border: 3px solid #3cba54;
+            border-radius: 0 0 8px 8px;
+            overflow: hidden;
+            background: #000;
+            aspect-ratio: 4/3;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .video-frame.processed {
+            border-color: #f4c20d;
+        }
+        video, canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: contain;
+        }
+        .overlay-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 2;
+        }
+        .controls-container {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        .control-group h3 {
+            color: #3c4043;
+            font-size: 14px;
+            margin-bottom: 12px;
+            font-weight: bold;
+        }
+        .control-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 12px;
+            gap: 10px;
+        }
+        .control-label {
+            flex: 0 0 200px;
+            font-size: 12px;
+            color: #3c4043;
+            font-weight: 500;
+        }
+        .slider-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .slider {
+            flex: 1;
+            -webkit-appearance: none;
+            height: 5px;
+            border-radius: 3px;
+            background: #e0e0e0;
+            outline: none;
+        }
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #4285f4;
+            cursor: pointer;
+        }
+        .slider::-webkit-slider-thumb:hover {
+            background: #0b66c3;
+        }
+        .value-display {
+            width: 55px;
+            padding: 4px;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            text-align: center;
+            font-size: 12px;
+            font-weight: bold;
+            background: #f8f9fa;
+        }
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .toggle-switch {
+            position: relative;
+            width: 50px;
+            height: 26px;
+            background: #ccc;
+            border-radius: 13px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .toggle-switch.active {
+            background: #4285f4;
+        }
+        .toggle-slider {
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.3s;
+        }
+        .toggle-switch.active .toggle-slider {
+            transform: translateX(24px);
+        }
+        .toggle-label {
+            font-weight: bold;
+            font-size: 12px;
+            color: #3c4043;
+            min-width: 90px;
+        }
+        .button-group {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: #4285f4;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #0b66c3;
+        }
+        .btn-danger {
+            background: #ea4335;
+            color: white;
+        }
+        .btn-danger:hover {
+            background: #c23321;
+        }
+        .status-bar {
+            padding: 8px 12px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            background: #e8f0fe;
+            color: #1967d2;
+            border: 1px solid #dadce0;
+            min-height: 32px;
+            display: flex;
+            align-items: center;
+        }
+        .status-bar.active {
+            background: #d4edda;
+            color: #155724;
+            border-color: #c3e6cb;
+        }
+    </style>
+
+    <div class="main-container">
+        <h2 style="margin: 0 0 15px 0; color: #3c4043; font-size: 20px;">Dice Detection System</h2>
+
+        <div class="status-bar" id="statusBar">No dice detected</div>
+
+        <div class="video-container">
+            <div class="video-wrapper">
+                <div class="video-title">Raw Stream</div>
+                <div class="video-frame" id="raw-frame">
+                    <video id="video" autoplay playsinline style="display: none;"></video>
+                    <canvas id="rawCanvas" width="640" height="480"></canvas>
+                    <canvas id="rawOverlay" class="overlay-canvas" width="640" height="480"></canvas>
+                </div>
+            </div>
+
+            <div class="video-wrapper">
+                <div class="video-title">OpenCV Processed</div>
+                <div class="video-frame processed" id="processed-frame">
+                    <canvas id="processedCanvas" width="640" height="480"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls-container">
+            <div class="control-group">
+                <h3>Parameters</h3>
+
+                <div class="button-group">
+                    <button id="startBtn" class="btn btn-primary" onclick="toggleStream()">Start Stream</button>
+                    <button id="captureBtn" class="btn btn-primary" onclick="toggleCapture()">Capture: OFF</button>
+                </div>
+
+                <div class="control-row">
+                    <div class="control-label">Detection Method</div>
+                    <div class="toggle-container">
+                        <div class="toggle-switch" id="methodToggle" onclick="toggleMethod()">
+                            <div class="toggle-slider"></div>
+                        </div>
+                        <div class="toggle-label" id="methodLabel">Edge Detection</div>
+                    </div>
+                </div>
+
+                <div class="control-row">
+                    <div class="control-label">Threshold (Black/White)</div>
+                    <div class="slider-container">
+                        <input type="range" class="slider" id="threshold" min="1" max="255" value="50">
+                        <input type="number" class="value-display" id="thresholdValue" value="50" min="1" max="255">
+                    </div>
+                </div>
+
+                <div class="control-row">
+                    <div class="control-label">Min Blob Area</div>
+                    <div class="slider-container">
+                        <input type="range" class="slider" id="minBlobArea" min="1" max="1000" value="10">
+                        <input type="number" class="value-display" id="minBlobAreaValue" value="10" min="1" max="1000">
+                    </div>
+                </div>
+
+                <div class="control-row">
+                    <div class="control-label">Max Blob Area</div>
+                    <div class="slider-container">
+                        <input type="range" class="slider" id="maxBlobArea" min="1" max="1000" value="50">
+                        <input type="number" class="value-display" id="maxBlobAreaValue" value="50" min="1" max="1000">
+                    </div>
+                </div>
+
+                <div class="control-row">
+                    <div class="control-label">Circularity (%)</div>
+                    <div class="slider-container">
+                        <input type="range" class="slider" id="circularity" min="1" max="100" value="1">
+                        <input type="number" class="value-display" id="circularityValue" value="1" min="1" max="100">
+                    </div>
+                </div>
+
+                <div class="control-row">
+                    <div class="control-label">Convexity (%)</div>
+                    <div class="slider-container">
+                        <input type="range" class="slider" id="convexity" min="1" max="100" value="1">
+                        <input type="number" class="value-display" id="convexityValue" value="1" min="1" max="100">
+                    </div>
+                </div>
+
+                <div class="control-row">
+                    <div class="control-label">Inertia (%)</div>
+                    <div class="slider-container">
+                        <input type="range" class="slider" id="inertia" min="1" max="100" value="1">
+                        <input type="number" class="value-display" id="inertiaValue" value="1" min="1" max="100">
+                    </div>
+                </div>
+
+                <div class="control-row">
+                    <div class="control-label">DBSCAN Max Grouping</div>
+                    <div class="slider-container">
+                        <input type="range" class="slider" id="dbscanEps" min="1" max="1000" value="50">
+                        <input type="number" class="value-display" id="dbscanEpsValue" value="50" min="1" max="1000">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let stream;
+        let video;
+        let isStreaming = false;
+        let captureMode = false;
+        let detectionMethod = 0;
+        let pendingResolve = null;
+        let animationId = null;
+
+        // Get all elements
+        const rawCanvas = document.getElementById('rawCanvas');
+        const rawOverlay = document.getElementById('rawOverlay');
+        const processedCanvas = document.getElementById('processedCanvas');
+        const rawCtx = rawCanvas.getContext('2d');
+        const overlayCtx = rawOverlay.getContext('2d');
+        const processedCtx = processedCanvas.getContext('2d');
+        const statusBar = document.getElementById('statusBar');
+
+        // Initialize sliders with bidirectional binding
+        function initializeControls() {
+            const sliderPairs = [
+                ['threshold', 'thresholdValue'],
+                ['minBlobArea', 'minBlobAreaValue'],
+                ['maxBlobArea', 'maxBlobAreaValue'],
+                ['circularity', 'circularityValue'],
+                ['convexity', 'convexityValue'],
+                ['inertia', 'inertiaValue'],
+                ['dbscanEps', 'dbscanEpsValue']
+            ];
+
+            sliderPairs.forEach(([sliderId, valueId]) => {
+                const slider = document.getElementById(sliderId);
+                const valueInput = document.getElementById(valueId);
+
+                slider.addEventListener('input', () => {
+                    valueInput.value = slider.value;
+                });
+
+                valueInput.addEventListener('input', () => {
+                    slider.value = valueInput.value;
+                });
+            });
+
+            // Special handling for min/max blob area
+            const minSlider = document.getElementById('minBlobArea');
+            const maxSlider = document.getElementById('maxBlobArea');
+            const minValue = document.getElementById('minBlobAreaValue');
+            const maxValue = document.getElementById('maxBlobAreaValue');
+
+            minSlider.addEventListener('input', () => {
+                if (parseInt(minSlider.value) > parseInt(maxSlider.value)) {
+                    maxSlider.value = minSlider.value;
+                    maxValue.value = minSlider.value;
+                }
+            });
+
+            maxSlider.addEventListener('input', () => {
+                if (parseInt(maxSlider.value) < parseInt(minSlider.value)) {
+                    minSlider.value = maxSlider.value;
+                    minValue.value = maxSlider.value;
+                }
+            });
+        }
+
+        async function startStream() {
+            video = document.getElementById('video');
+
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        facingMode: "environment"
+                    }
+                });
+
+                video.srcObject = stream;
+                await video.play();
+
+                isStreaming = true;
+                document.getElementById('startBtn').textContent = 'Stop Stream';
+                document.getElementById('startBtn').className = 'btn btn-danger';
+
+                captureFrame();
+            } catch (err) {
+                console.error('Error accessing camera:', err);
+                updateStatus('Error accessing camera: ' + err.message, false);
+            }
+        }
+
+        function stopStream() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+            }
+            isStreaming = false;
+            document.getElementById('startBtn').textContent = 'Start Stream';
+            document.getElementById('startBtn').className = 'btn btn-primary';
+
+            // Clear canvases
+            rawCtx.clearRect(0, 0, rawCanvas.width, rawCanvas.height);
+            overlayCtx.clearRect(0, 0, rawOverlay.width, rawOverlay.height);
+            processedCtx.clearRect(0, 0, processedCanvas.width, processedCanvas.height);
+
+            updateStatus('Stream stopped', false);
+        }
+
+        function toggleStream() {
+            if (isStreaming) {
+                stopStream();
+            } else {
+                startStream();
+            }
+        }
+
+        function toggleCapture() {
+            captureMode = !captureMode;
+            const btn = document.getElementById('captureBtn');
+            btn.textContent = captureMode ? 'Capture: ON' : 'Capture: OFF';
+            btn.style.background = captureMode ? '#34a853' : '#4285f4';
+        }
+
+        function toggleMethod() {
+            const toggle = document.getElementById('methodToggle');
+            const label = document.getElementById('methodLabel');
+
+            detectionMethod = detectionMethod === 0 ? 1 : 0;
+            toggle.classList.toggle('active');
+            label.textContent = detectionMethod === 0 ? 'Edge Detection' : 'DBSCAN Clustering';
+        }
+
+        function updateStatus(message, isActive=false) {
+            statusBar.textContent = message;
+            if (isActive) {
+                statusBar.classList.add('active');
+            } else {
+                statusBar.classList.remove('active');
+            }
+        }
+
+        function getParameters() {
+            return {
+                detection_method: detectionMethod,
+                threshold: parseInt(document.getElementById('threshold').value),
+                min_blob_area: parseInt(document.getElementById('minBlobArea').value),
+                max_blob_area: parseInt(document.getElementById('maxBlobArea').value),
+                circularity: parseInt(document.getElementById('circularity').value),
+                convexity: parseInt(document.getElementById('convexity').value),
+                inertia: parseInt(document.getElementById('inertia').value),
+                dbscan_eps: parseInt(document.getElementById('dbscanEps').value),
+                capture_mode: captureMode
+            };
+        }
+
+        async function captureFrame() {
+            if (!isStreaming) return;
+
+            // Draw video to raw canvas
+            rawCtx.drawImage(video, 0, 0, 640, 480);
+
+            // Get frame data
+            const frameData = rawCanvas.toDataURL('image/jpeg', 0.8);
+
+            // Send frame to Python for processing
+            if (pendingResolve) {
+                const params = getParameters();
+                pendingResolve({
+                    img: frameData,
+                    params: params
+                });
+                pendingResolve = null;
+            }
+
+            animationId = requestAnimationFrame(captureFrame);
+        }
+
+        async function getFrame() {
+            return new Promise((resolve) => {
+                pendingResolve = resolve;
+            });
+        }
+
+        function updateProcessedFrame(processedData, overlayData) {
+            // Update processed (binary) frame
+            if (processedData) {
+                const img = new Image();
+                img.onload = () => {
+                    processedCtx.drawImage(img, 0, 0);
+                };
+                img.src = processedData;
+            }
+
+            // Update overlay on raw frame
+            if (overlayData) {
+                const img = new Image();
+                img.onload = () => {
+                    overlayCtx.clearRect(0, 0, rawOverlay.width, rawOverlay.height);
+                    overlayCtx.drawImage(img, 0, 0);
+                };
+                img.src = overlayData;
+            }
+        }
+
+        // Initialize controls
+        initializeControls();
+
+        // Export functions for Python
+        window.getFrame = getFrame;
+        window.updateProcessedFrame = updateProcessedFrame;
+        window.updateStatus = updateStatus;
+    </script>
