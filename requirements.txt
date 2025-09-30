@@ -6,3 +6,4 @@ ipywidgets
 scikit-learn
 matplotlib
 tensorflow
+ultralytics

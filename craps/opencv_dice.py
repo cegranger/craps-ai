@@ -45,10 +45,10 @@ def get_dice_from_blobs(blobs):
             dice.append(len(X_dice))
             centroids.append(np.mean(X_dice, axis=0))
             # print('X_dice', len(X_dice))
-        return dice, centroids
+        return (dice, centroids)
 
     else:
-        return []
+        return ([], [])
 
 
 def overlay_info(frame, dice, blobs):

@@ -1,11 +1,17 @@
-from collections import OrderedDict
+import os
 import random
+import sys
+import threading
+from collections import OrderedDict
 
-import pygame as pg
 import cv2
-from . import tools, prepare
-from .components.labels import NeonButton, Label, ButtonGroup, TextBox
-from . import craps_data, dice, point_chip
+import pygame as pg
+
+sys.path.append("..")
+from models import yolo
+from . import craps_data, dice, point_chip, prepare, tools
+from .components.labels import ButtonGroup, Label, NeonButton, TextBox
+from .components.warning_window import InfoWindow
 from .opencv_dice import take_picture
 
 
@@ -13,7 +19,7 @@ class Craps():
     show_in_lobby = True
     name = 'craps'
 
-    def __init__(self):
+    def __init__(self, use_yolo, **kwargs):
         super(Craps, self).__init__()
         self.screen_rect = pg.Rect((0, 0), prepare.RENDER_SIZE)
         self.font = prepare.FONTS["Saniretro"]
@@ -40,8 +46,32 @@ class Craps():
             self.debug_die2 = None
             self.debug_dice_total = None
         #VIDEO CAPTURE
-        self.cap = cv2.VideoCapture(0)
+        # self.cap = cv2.VideoCapture(0)
         #cap.release()
+
+        self.popup = None
+
+        self.cap = None
+        self.yolo_thread = None
+
+        self.use_yolo = use_yolo
+        self.model = None
+        if self.use_yolo:
+            model = kwargs.get("model", None)
+            if model:
+                self.model = model
+            else:
+                self.model = yolo.load_model(os.path.join(
+                    os.path.dirname(__file__),
+                    "..",
+                    "models",
+                    "craps-ai",
+                    # "yolov8n",
+                    # "yolov8n4",
+                    "yolov8n-obb",
+                    "weights",
+                    "best.pt"
+                ))
 
     @staticmethod
     def initialize_stats():
@@ -78,6 +108,14 @@ class Craps():
         self.next = "lobby"
         self.done = True
 
+        # Release video capture and join thread
+        if self.cap and self.cap.isOpened():
+            self.cap.release()
+            self.cap = None
+        if self.yolo_thread:
+            self.yolo_thread.join()
+            self.yolo_thread = None
+
     def debug_roll(self, id, text):
         self.roll()
         try:
@@ -92,17 +130,68 @@ class Craps():
         except IndexError: #user didnt input correct format "VALUE VALUE"
             print('Input needs to be "VALUE VALUE"')
 
-    def roll(self, *args):
+    def reset_game(self):
+        print("Resetting game")
+        self.history = []
+        for die in self.dice:
+            die.roll_value = 0
+            die.draw_dice = False
+
+        self.dice_total = 0
+        self.update_total_label()
+
+        self.point = 0
+
+    def roll(self, **kwargs):
         if not self.dice[0].rolling:
             self.update_history()
-            dice_value, crops = take_picture(self.cap)
-            print("Nombre de dés", len(dice_value))
-            if len(dice_value) == len(self.dice):
+
+            dice_values = kwargs.get("dice_values", None)
+            crops = kwargs.get("crops", None)
+
+            if not dice_values or not crops:
+                self.cap.read()
+                if self.use_yolo:
+                    dice_values, crops = yolo.take_picture(self.cap, self.model)
+                else:
+                    dice_values, crops = take_picture(self.cap)
+
+            # print(f'Dice Count: {len(dice_values)}')
+            if len(dice_values) == len(self.dice):
                 for i, die in enumerate(self.dice):
-                    print('ALLOOO', dice_value[i])
-                    die.reset(dice_value[i], crops[i])
+                    # print(f'Dice {i+1}: {dice_values[i]}')
+                    die.reset(dice_values[i], crops[i])
                 if prepare.DEBUG:
                     print(self.history)
+
+                self.get_dice_total(pg.time.get_ticks())
+
+                # Reset popup
+                self.popup = None
+                message = None
+
+                if self.point == 0:  # Come-Out Roll (first phase)
+                    if self.dice_total in (7, 11):  # Win immediately
+                        message = "You rolled a 7 or 11 on your first try. You win!"
+                    elif self.dice_total in (2, 3, 12):  # Craps: Lose immediately
+                        message = "Craps! You rolled a 2, 3, or 12 on your first try. You lose!"
+                    else:  # Establish the point
+                        self.point = self.dice_total
+
+                else:  # Point Phase (second phase)
+                    if self.dice_total == self.point:  # Win by hitting the point
+                        message = f"You rolled the point {self.point} again. You win!"
+                    elif self.dice_total == 7:  # Lose by rolling a 7
+                        message = "You rolled a 7! You lost!"
+                    else:  # Any other number, keep rolling
+                        message = f"You rolled {self.dice_total}. Roll again."
+
+                if message: # Show popup
+                    self.popup = InfoWindow(
+                        self.screen_rect.center,
+                        message,
+                        self.reset_game
+                    )
             else:
                 print('Wrong number of dice, please re-roll')
 
@@ -121,6 +210,44 @@ class Craps():
             die.draw_dice = False
         self.history = []
 
+        if self.cap and self.cap.isOpened():
+            self.cap.release()
+            self.cap = None
+
+        if self.yolo_thread and self.yolo_thread.is_alive():
+            self.yolo_thread.join()
+            self.yolo_thread = None
+
+        # Video capture
+        self.cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+        if self.use_yolo:
+            # QueueDict instances to store dice detection results
+            self.previous_detections = yolo.QueueDict(maxsize=0)
+            self.current_detections = yolo.QueueDict(maxsize=len(self.dice))
+
+            confidence = 0.8
+            stability_frames = 10
+            position_frames = 1
+            translate_margin = 0.75
+            debug = False
+            self.yolo_thread = threading.Thread(
+                target=yolo.stable_predict,
+                args=(
+                    (self.previous_detections, self.current_detections),
+                    self.cap,
+                    self.model,
+                    confidence,
+                    stability_frames,
+                    position_frames,
+                    translate_margin,
+                    debug
+                ),
+                daemon=True
+            )
+            self.yolo_thread.start()
+
     def get_event(self, event, scale=(1,1)):
         if event.type == pg.QUIT:
             #self.cash_out_player()
@@ -128,7 +255,13 @@ class Craps():
             self.next = "lobby"
         elif event.type == pg.VIDEORESIZE:
             self.set_table()
-        self.buttons.get_event(event)
+
+        # If a popup is active, pass events to it instead of buttons
+        if self.popup and not self.popup.done:
+            self.popup.get_event(event)
+        else:
+            self.buttons.get_event(event)
+
         for widget in self.widgets:
             widget.get_event(event, tools.scaled_mouse_pos(scale))
 
@@ -165,14 +298,20 @@ class Craps():
     def draw(self, surface):
         surface.fill(self.table_color)
         surface.blit(self.table, self.table_rect)
-        self.buttons.draw(surface)
+        # self.buttons.draw(surface) # no longer needed with the notebook interface
         for h in self.bets.keys():
             self.bets[h].draw(surface)
 
         for die in self.dice:
             die.draw(surface)
+
         if not self.dice[0].rolling and self.dice[0].draw_dice:
             self.dice_total_label.draw(surface)
+
+            # Draw popup if active
+            if self.popup and not self.popup.done:
+                self.popup.draw(surface)
+
         self.pointchip.draw(surface)
         for widget in self.widgets:
             widget.draw(surface)
@@ -181,14 +320,43 @@ class Craps():
 
     def update(self, surface, keys, current_time, dt, scale):
         mouse_pos = tools.scaled_mouse_pos(scale)
-        self.buttons.update(mouse_pos)
+
+        # If a popup is active, pass mouse position to it instead of buttons
+        if self.popup and not self.popup.done:
+            self.popup.update(mouse_pos)
+        else:
+            self.buttons.update(mouse_pos)
+            for h in self.bets.keys():
+                self.bets[h].update(mouse_pos, self.point)
+
         self.draw(surface)
         self.get_dice_total(current_time)
-        self.set_point()
 
-        for h in self.bets.keys():
-            self.bets[h].update(mouse_pos, self.point)
-        self.pointchip.update(current_time, self.dice_total, self.dice[0])
+        if self.popup and not self.popup.done:
+            self.point = 0
+            self.pointchip.update(current_time, 7, self.dice[0])
+        else:
+            self.set_point()
+            self.pointchip.update(current_time, self.dice_total, self.dice[0])
+
         self.update_total_label()
         for widget in self.widgets:
             widget.update()
+
+        if self.use_yolo:
+            # print("Previous:", self.previous_detections.keys())
+            # print("Current:", self.current_detections.keys())
+            if len(self.current_detections) == len(self.dice):
+                has_new_dice = set(self.current_detections.keys()) - set(self.previous_detections.keys())
+                if has_new_dice:
+                    dice_values = []
+                    crops = []
+                    for key, value in self.current_detections.items():
+                        if self.previous_detections.full():
+                            self.previous_detections.pop()
+                        self.previous_detections[key] = value
+
+                        dice_values.append(int(value[0]))
+                        crops.append(value[1])
+
+                    self.roll(dice_values=dice_values, crops=crops)

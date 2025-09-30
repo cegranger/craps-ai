@@ -49,7 +49,7 @@ class ThreadSafeFrameBuffer:
         self.new_frame_event.clear()
 
 class CrapsGameController:
-    def __init__(self, event_queue, frame_buffer):
+    def __init__(self, event_queue, frame_buffer, **kwargs):
         self.event_queue = event_queue
         self.frame_buffer = frame_buffer
         self.event_count = {'roll': 0, 'quit': 0}
@@ -58,6 +58,8 @@ class CrapsGameController:
         self.fps = 0
         self.fps_update_time = time.time()
         self.fps_frame_count = 0
+        self.use_yolo = kwargs.get("use_yolo", False)
+        self.model = kwargs.get("model", None)
         
         # Create widgets
         self.create_widgets()
@@ -73,14 +75,17 @@ class CrapsGameController:
                 border_radius='5px'
             )
         )
-        
+
         # Game control buttons
-        self.roll_button = widgets.Button(
-            description='🎲 Roll Dice',
-            button_style='success',
-            tooltip='Roll the dice!',
-            layout=widgets.Layout(width='150px', height='50px')
-        )
+        if self.use_yolo:
+            self.roll_button = None
+        else:
+            self.roll_button = widgets.Button(
+                description='🎲 Roll Dice',
+                button_style='success',
+                tooltip='Roll the dice!',
+                layout=widgets.Layout(width='150px', height='50px')
+            )
         
         self.quit_button = widgets.Button(
             description='🚪 Cash Out',
@@ -123,7 +128,8 @@ class CrapsGameController:
         )
         
         # Connect handlers
-        self.roll_button.on_click(self.on_roll_click)
+        if self.roll_button:
+            self.roll_button.on_click(self.on_roll_click)
         self.quit_button.on_click(self.on_quit_click)
         self.start_game_button.on_click(self.on_start_game_click)
         
@@ -191,7 +197,7 @@ class CrapsGameController:
             # Start the modified game thread
             game_thread = threading.Thread(
                 target=game_with_frame_buffer,
-                args=(self.event_queue, self.frame_buffer),
+                args=(self.event_queue, self.frame_buffer, self.use_yolo, self.model),
                 daemon=True
             )
             game_thread.start()
@@ -231,8 +237,11 @@ class CrapsGameController:
         
         # Game controls
         game_controls_title = widgets.HTML('<h3>🎮 Game Controls</h3>')
+        buttons = [self.start_game_button, self.quit_button]
+        if self.roll_button:
+            buttons.insert(1, self.roll_button)
         game_buttons = widgets.HBox(
-            [self.start_game_button, self.roll_button, self.quit_button],
+            buttons,
             layout=widgets.Layout(justify_content='space-around', margin='10px')
         )
         
@@ -259,7 +268,7 @@ class CrapsGameController:
         return widgets.VBox([title, main_content])
 
 # Modified game function that uses frame buffer instead of saving files
-def game_with_frame_buffer(event_queue, frame_buffer):
+def game_with_frame_buffer(event_queue, frame_buffer, use_yolo, model=None):
     """Modified game thread that sends frames to buffer instead of saving files"""
     import os
     os.environ["SDL_VIDEODRIVER"] = "dummy"
@@ -296,7 +305,7 @@ def game_with_frame_buffer(event_queue, frame_buffer):
     casino_player = CasinoPlayer(stats)
     
     # Initialize the Craps game
-    game = Craps()
+    game = Craps(use_yolo=use_yolo, model=model)
     game.startup(pg.time.get_ticks(), {"casino_player": casino_player})
     
     # Game loop variables
