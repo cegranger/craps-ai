@@ -240,8 +240,8 @@ class CrapsGameController:
                             self.fps_update_time = current_time
                             self.performance_label.value = self._get_performance_html()
                 
-        updater_thread = threading.Thread(target=update_loop, daemon=True)
-        updater_thread.start()
+        self.updater_thread = threading.Thread(target=update_loop, daemon=True)
+        self.updater_thread.start()
         
     def on_start_game_click(self, b):
         """Start the game thread"""
@@ -294,6 +294,7 @@ class CrapsGameController:
         
         self.event_queue.put("quit")
         self.game_thread.join()
+        self.updater_thread.join()
         with self.output:
             print(f"🚪 [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Cashing out... Game stopped.")
             
@@ -394,7 +395,8 @@ def game_with_frame_buffer(event_queue, frame_buffer):
             event = event_queue.get(block=False)
             
             if event == "quit":
-                print("Quitting the game...")
+                print("Game thread: Quitting the game...")
+                game.get_event(pg.QUIT)
                 running = False
             elif event == "roll":
                 # Manual roll
@@ -439,4 +441,5 @@ def game_with_frame_buffer(event_queue, frame_buffer):
         # Cap frame rate
         dt = clock.tick(15)
     
+    print("Game Thread: Closing the thread...")
     pg.quit()
