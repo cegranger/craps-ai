@@ -250,12 +250,12 @@ class CrapsGameController:
             self.event_queue.put(f"mode:{self.current_mode}")
             
             # Start the modified game thread
-            game_thread = threading.Thread(
+            self.game_thread = threading.Thread(
                 target=game_with_frame_buffer,
                 args=(self.event_queue, self.frame_buffer),
                 daemon=True
             )
-            game_thread.start()
+            self.game_thread.start()
             
             self.game_running = True
             self.game_status.value = self._get_status_html()
@@ -284,7 +284,6 @@ class CrapsGameController:
                 print(f"🎲 [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Rolling dice manually...")
         
     def on_quit_click(self, b):
-        self.event_queue.put("quit")
         self.event_count['quit'] += 1
         self.counter_label.value = self._get_counter_html()
         self.game_running = False
@@ -292,6 +291,11 @@ class CrapsGameController:
         self.start_game_button.disabled = False
         with self.output:
             print(f"🚪 [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Cashing out... Game stopping.")
+        
+        self.event_queue.put("quit")
+        self.game_thread.join()
+        with self.output:
+            print(f"🚪 [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Cashing out... Game stopped.")
             
     def display(self):
         # Title
@@ -400,7 +404,7 @@ def game_with_frame_buffer(event_queue, frame_buffer):
                 current_mode = event.split(":")[1]
                 if current_mode not in ["manual", "cnn", "yolo"]:
                     raise ValueError(f"Game thread: Invalid mode: {current_mode}")
-                print(f"Game thread: Mode set to sdas{current_mode}")
+                print(f"Game thread: Mode set to {current_mode}")
             else:
                 print(f"Wrong event name {event}!")
                 
