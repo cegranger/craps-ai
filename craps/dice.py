@@ -31,7 +31,7 @@ class Die:
         if self.is_die2: #on only second die
             x += dice_large_offset
         self.dice_large_pos = (x,y)
-        self.crop = None
+
         self.dice_large = []
         for die in self.dice:
             self.dice_large.append(pg.transform.scale(die, (100,100)))
@@ -61,22 +61,30 @@ class Die:
         if self.draw_dice:
             surface.blit(self.dice[self.roll_value], self.dice_rect)
             if not self.rolling:
-                surf_frame = pg.surfarray.make_surface(self.crop)
-                scaled = pg.transform.scale(surf_frame, (100,100))
-                surface.blit(scaled, self.dice_large_pos)
+                surface.blit(self.dice_large[self.roll_value], self.dice_large_pos)
 
-    def reset(self, dice_value, crop):
+    def reset(self):
         if not self.rolling:
             self.draw_dice = True
             self.dice_speed = 40
             self.dice_moving_left = True
             self.rolling = True
             self.dice_rect.center = self.dice_starting_pos
-            self.roll_value = dice_value - 1    #random.randint(0,5)
-            self.crop = crop
+            self.roll_value = random.randint(0,5)
 
     def value(self):
         if not self.rolling and not self.draw_dice:
             return None
         else:
             return self.roll_value + 1
+
+    # For CNN
+    def reset_cnn(self, dice_value, crop):
+        if not self.rolling:
+            self.draw_dice = True
+            self.dice_speed = 75
+            self.dice_moving_left = True
+            self.rolling = True
+            self.dice_rect.center = self.dice_starting_pos
+            self.roll_value = dice_value - 1    #random.randint(0,5)
+            self.crop = crop

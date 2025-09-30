@@ -92,19 +92,34 @@ class Craps():
         except IndexError: #user didnt input correct format "VALUE VALUE"
             print('Input needs to be "VALUE VALUE"')
 
-    def roll(self, *args):
-        if not self.dice[0].rolling:
+    def roll(self, mode="manual", *args):
+        if mode not in ["manual", "cnn", "yolo"]:
+            raise ValueError(f"Invalid mode: {mode}")
+        
+        if not self.dice[0].rolling: 
             self.update_history()
-            dice_value, crops = take_picture(self.cap)
-            print("Nombre de dés", len(dice_value))
-            if len(dice_value) == len(self.dice):
-                for i, die in enumerate(self.dice):
-                    print('ALLOOO', dice_value[i])
-                    die.reset(dice_value[i], crops[i])
+            
+            if mode == "manual":
+                for die in self.dice:
+                    die.reset()
                 if prepare.DEBUG:
                     print(self.history)
-            else:
-                print('Wrong number of dice, please re-roll')
+                    
+            elif mode == "cnn":
+                pass
+            elif mode == "yolo":
+                pass
+                
+            # dice_value, crops = take_picture(self.cap)
+            # print("Nombre de dés", len(dice_value))
+            # if len(dice_value) == len(self.dice):
+            #     for i, die in enumerate(self.dice):
+            #         print('ALLOOO', dice_value[i])
+            #         die.reset(dice_value[i], crops[i])
+            #     if prepare.DEBUG:
+            #         print(self.history)
+            # else:
+            #     print('Wrong number of dice, please re-roll')
 
     def set_table(self):
         self.table_y = (self.screen_rect.height // 4)*3

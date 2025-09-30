@@ -52,12 +52,13 @@ class CrapsGameController:
     def __init__(self, event_queue, frame_buffer):
         self.event_queue = event_queue
         self.frame_buffer = frame_buffer
-        self.event_count = {'roll': 0, 'quit': 0}
+        self.event_count = {'manual': 0, 'cnn': 0, 'yolo': 0, 'quit': 0}
         self.game_running = False
         self.last_frame_number = 0
         self.fps = 0
         self.fps_update_time = time.time()
         self.fps_frame_count = 0
+        self.current_mode = 'manual'  # Can be 'manual', 'cnn', or 'yolo'
         
         # Create widgets
         self.create_widgets()
@@ -74,11 +75,24 @@ class CrapsGameController:
             )
         )
         
+        # Mode selector - unified for manual and AI models
+        self.mode_selector = widgets.RadioButtons(
+            options=[
+                ('🎮 Manual', 'manual'),
+                ('🤖 AI - CNN', 'cnn'),
+                ('🤖 AI - YOLO', 'yolo')
+            ],
+            value='manual',
+            description='Mode:',
+            layout=widgets.Layout(width='250px')
+        )
+        self.mode_selector.observe(self.on_mode_change, 'value')
+        
         # Game control buttons
         self.roll_button = widgets.Button(
             description='🎲 Roll Dice',
             button_style='success',
-            tooltip='Roll the dice!',
+            tooltip='Roll the dice manually!',
             layout=widgets.Layout(width='150px', height='50px')
         )
         
@@ -130,6 +144,30 @@ class CrapsGameController:
         # Start frame update thread
         self.start_frame_updater()
         
+    def on_mode_change(self, change):
+        """Handle mode change (manual, cnn, or yolo)"""
+        self.current_mode = change['new']
+        
+        # Update UI based on mode
+        if self.current_mode == 'manual':
+            self.roll_button.disabled = False
+            with self.output:
+                print(f"🎮 [{datetime.now().strftime('%H:%M:%S')}] Switched to Manual Mode")
+                print("   Use the 'Roll Dice' button to play")
+        else:
+            self.roll_button.disabled = True
+            mode_name = 'CNN' if self.current_mode == 'cnn' else 'YOLO'
+            with self.output:
+                print(f"🤖 [{datetime.now().strftime('%H:%M:%S')}] Switched to AI Mode ({mode_name})")
+                print(f"   AI will automatically detect dice rolls using {mode_name} model")
+        
+        # Send mode change to game thread if game is running
+        if self.game_running:
+            self.event_queue.put(f"mode:{self.current_mode}")
+        
+        # Update status display
+        self.game_status.value = self._get_status_html()
+        
     def _get_performance_html(self):
         return f"""
         <div style="font-family: monospace; padding: 5px; background: #e8f5e9; border-radius: 5px;">
@@ -141,17 +179,37 @@ class CrapsGameController:
     def _get_status_html(self):
         status_color = "green" if self.game_running else "red"
         status_text = "🟢 Running" if self.game_running else "🔴 Stopped"
+        
+        mode_icons = {
+            'manual': '🎮',
+            'cnn': '🤖',
+            'yolo': '🤖'
+        }
+        mode_names = {
+            'manual': 'Manual',
+            'cnn': 'AI - CNN',
+            'yolo': 'AI - YOLO'
+        }
+        
+        mode_icon = mode_icons.get(self.current_mode, '🎮')
+        mode_text = mode_names.get(self.current_mode, 'Manual')
+        
         return f"""
         <div style="font-family: monospace; padding: 10px; background: #f0f0f0; border-radius: 5px;">
             <h4 style="margin: 0;">Game Status: <span style="color: {status_color};">{status_text}</span></h4>
+            <p style="margin: 5px 0 0 0;">Mode: {mode_icon} <b>{mode_text}</b></p>
         </div>
         """
         
     def _get_counter_html(self):
+        total_rolls = self.event_count['manual'] + self.event_count['cnn'] + self.event_count['yolo']
         return f"""
         <div style="font-family: monospace; padding: 10px; background: #f9f9f9; border-radius: 5px;">
-            <b>📊 Event Statistics:</b><br>
-            🎲 Rolls: <span style="color: green; font-size: 1.2em;">{self.event_count['roll']}</span> | 
+            <b>📊 Roll Statistics:</b><br>
+            🎮 Manual: <span style="color: green; font-size: 1.2em;">{self.event_count['manual']}</span><br>
+            🤖 CNN: <span style="color: blue; font-size: 1.2em;">{self.event_count['cnn']}</span><br>
+            🤖 YOLO: <span style="color: purple; font-size: 1.2em;">{self.event_count['yolo']}</span><br>
+            📈 Total: <span style="color: black; font-size: 1.2em;">{total_rolls}</span><br>
             🚪 Quits: <span style="color: red; font-size: 1.2em;">{self.event_count['quit']}</span>
         </div>
         """
@@ -188,6 +246,9 @@ class CrapsGameController:
     def on_start_game_click(self, b):
         """Start the game thread"""
         if not self.game_running:
+            # Send initial mode to game thread
+            self.event_queue.put(f"mode:{self.current_mode}")
+            
             # Start the modified game thread
             game_thread = threading.Thread(
                 target=game_with_frame_buffer,
@@ -200,17 +261,28 @@ class CrapsGameController:
             self.game_status.value = self._get_status_html()
             self.start_game_button.disabled = True
             
+            mode_names = {
+                'manual': 'Manual',
+                'cnn': 'AI (CNN)',
+                'yolo': 'AI (YOLO)'
+            }
+            
             with self.output:
                 print(f"🎰 [{datetime.now().strftime('%H:%M:%S')}] Game thread started!")
-                print("🎲 Game is ready. Click 'Roll Dice' to play!")
+                print(f"🎲 Game is ready in {mode_names[self.current_mode]} mode!")
+                if self.current_mode != 'manual':
+                    print(f"   AI will automatically detect dice rolls")
+                else:
+                    print("   Click 'Roll Dice' to play!")
                 
     def on_roll_click(self, b):
-        self.event_queue.put("roll")
-        self.event_count['roll'] += 1
-        self.counter_label.value = self._get_counter_html()
-        with self.output:
-            print(f"🎲 [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Rolling dice...")
-            
+        if self.current_mode == 'manual':
+            self.event_queue.put(f"roll")
+            self.event_count['manual'] += 1
+            self.counter_label.value = self._get_counter_html()
+            with self.output:
+                print(f"🎲 [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Rolling dice manually...")
+        
     def on_quit_click(self, b):
         self.event_queue.put("quit")
         self.event_count['quit'] += 1
@@ -229,6 +301,12 @@ class CrapsGameController:
         </div>
         ''')
         
+        # Mode controls
+        mode_controls_title = widgets.HTML('<h3>⚙️ Game Mode</h3>')
+        mode_controls = widgets.VBox([
+            self.mode_selector
+        ], layout=widgets.Layout(margin='10px', padding='10px', border='1px solid #ddd', border_radius='5px'))
+        
         # Game controls
         game_controls_title = widgets.HTML('<h3>🎮 Game Controls</h3>')
         game_buttons = widgets.HBox(
@@ -238,6 +316,8 @@ class CrapsGameController:
         
         # Left panel
         left_panel = widgets.VBox([
+            mode_controls_title,
+            mode_controls,
             game_controls_title,
             game_buttons,
             self.game_status,
@@ -245,7 +325,7 @@ class CrapsGameController:
             self.performance_label,
             widgets.HTML('<h4>📋 Game Log:</h4>'),
             self.output
-        ], layout=widgets.Layout(width='400px', padding='10px'))
+        ], layout=widgets.Layout(width='450px', padding='10px'))
         
         # Right panel
         right_panel = widgets.VBox([
@@ -303,18 +383,41 @@ def game_with_frame_buffer(event_queue, frame_buffer):
     running = True
     dt = 0
     scale = (1, 1)
+    current_mode = 'manual'  # Track current mode: 'manual', 'cnn', or 'yolo'
     
     while running:
         try:
             event = event_queue.get(block=False)
+            
             if event == "quit":
                 print("Quitting the game...")
                 running = False
             elif event == "roll":
-                game.roll()
+                # Manual roll
+                game.roll("manual")
+            elif event.startswith("mode:"):
+                # Update mode
+                current_mode = event.split(":")[1]
+                if current_mode not in ["manual", "cnn", "yolo"]:
+                    raise ValueError(f"Invalid mode: {current_mode}")
+                print(f"Game thread: Mode set to {current_mode}")
+                
+            elif current_mode == "cnn":
+                pass
+            elif current_mode == "yolo":
+                pass
+            else:
+                print(f"Wrong event name {event}!")
+                
             event_queue.task_done()
         except queue.Empty:
             pass
+        
+        # If in AI mode, automatically trigger rolls when appropriate
+        # You'll need to add logic here to detect when to roll based on game state
+        # For example:
+        # if current_mode in ['cnn', 'yolo'] and game.should_roll():
+        #     game.roll(current_mode)
         
         # Update game state
         keys = pg.key.get_pressed()

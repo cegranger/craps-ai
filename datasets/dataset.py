@@ -1,5 +1,6 @@
 from keras.utils import image_dataset_from_directory
 import matplotlib.pyplot as plt
+import numpy as np
 
 class Dataset:
     def __init__(self):
@@ -14,7 +15,7 @@ class Dataset:
         self.train_data, self.val_data = image_dataset_from_directory(
             directory=self.dataset_dir,
             labels="inferred",
-            label_mode="int",
+            label_mode="categorical",
             class_names=None,
             color_mode="rgb",
             batch_size=batch_size,
@@ -33,7 +34,7 @@ class Dataset:
         
     def plot_classes(self, train_or_val:bool):
         data = self.train_data if train_or_val else self.val_data
-    
+
         class_names = data.class_names
         num_classes = len(class_names)
         
@@ -41,7 +42,8 @@ class Dataset:
         
         for batch_images, batch_labels in data:
             for image, label in zip(batch_images, batch_labels):
-                label = int(label.numpy())
+                # Convert one-hot encoded label to integer
+                label = int(np.argmax(label.numpy()))  # USE np.argmax HERE
                 if label not in images_per_class:
                     images_per_class[label] = image
                 if len(images_per_class) == num_classes: 
@@ -59,6 +61,6 @@ class Dataset:
             ax.set_title(class_names[label])
         
         fig.suptitle("Échantillons des données d'entrainements", fontsize=16, y=0.9) if train_or_val else fig.suptitle("Échantillons des données de validation", fontsize=16, y=0.9)
-        plt.tight_layout(rect=[0, 0.05, 1, 0.9])  # Adjust layout to make room for titles
+        plt.tight_layout(rect=[0, 0.05, 1, 0.9])
         plt.show()
 
