@@ -399,13 +399,8 @@ def game_with_frame_buffer(event_queue, frame_buffer):
                 # Update mode
                 current_mode = event.split(":")[1]
                 if current_mode not in ["manual", "cnn", "yolo"]:
-                    raise ValueError(f"Invalid mode: {current_mode}")
-                print(f"Game thread: Mode set to {current_mode}")
-                
-            elif current_mode == "cnn":
-                pass
-            elif current_mode == "yolo":
-                pass
+                    raise ValueError(f"Game thread: Invalid mode: {current_mode}")
+                print(f"Game thread: Mode set to sdas{current_mode}")
             else:
                 print(f"Wrong event name {event}!")
                 
@@ -413,11 +408,13 @@ def game_with_frame_buffer(event_queue, frame_buffer):
         except queue.Empty:
             pass
         
-        # If in AI mode, automatically trigger rolls when appropriate
-        # You'll need to add logic here to detect when to roll based on game state
-        # For example:
-        # if current_mode in ['cnn', 'yolo'] and game.should_roll():
-        #     game.roll(current_mode)
+        
+        if current_mode == "cnn":
+            print(f"Game thread: rolling with {current_mode}")
+            pass
+        elif current_mode == "yolo":
+            print(f"Game thread: rolling with {current_mode}")
+            pass
         
         # Update game state
         keys = pg.key.get_pressed()

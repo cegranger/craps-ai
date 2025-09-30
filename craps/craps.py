@@ -104,6 +104,7 @@ class Craps():
                     die.reset()
                 if prepare.DEBUG:
                     print(self.history)
+                print(f"Game Thread: Rolled {self.dice[0].value() + self.dice[1].value()}")
                     
             elif mode == "cnn":
                 pass
