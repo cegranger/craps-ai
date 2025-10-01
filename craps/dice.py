@@ -1,4 +1,5 @@
 import random
+import numpy as np
 
 import pygame as pg
 
@@ -13,6 +14,8 @@ class Die:
         self.dice = tools.strip_from_sheet(sheet, (0,0), (36,36), 1, 6)
         self.dice_rect = self.dice[0].get_rect()
         self.rolling = False
+
+        self.crop = None
 
         self.roll_value = 0
         dice_buffer_x = 15
@@ -61,7 +64,12 @@ class Die:
         if self.draw_dice:
             surface.blit(self.dice[self.roll_value], self.dice_rect)
             if not self.rolling:
-                surface.blit(self.dice_large[self.roll_value], self.dice_large_pos)
+                if isinstance(self.crop, np.ndarray) and self.crop.size > 0:
+                    surf_frame = pg.surfarray.make_surface(self.crop)
+                    scaled = pg.transform.scale(surf_frame, (100,100))
+                    surface.blit(scaled, self.dice_large_pos)
+                else:
+                    surface.blit(self.dice_large[self.roll_value], self.dice_large_pos)
 
     def reset(self):
         if not self.rolling:
@@ -78,13 +86,13 @@ class Die:
         else:
             return self.roll_value + 1
 
-    # For CNN
     def reset_cnn(self, dice_value, crop):
         if not self.rolling:
             self.draw_dice = True
-            self.dice_speed = 75
+            self.dice_speed = 40
             self.dice_moving_left = True
             self.rolling = True
             self.dice_rect.center = self.dice_starting_pos
             self.roll_value = dice_value - 1    #random.randint(0,5)
             self.crop = crop
+            # print(f"Game Thread: Crop shape {crop.shape}")

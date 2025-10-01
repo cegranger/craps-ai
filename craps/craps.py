@@ -7,7 +7,6 @@ from . import tools, prepare
 from .components.labels import NeonButton, Label, ButtonGroup, TextBox
 from . import craps_data, dice, point_chip
 
-
 import numpy as np
 from .opencv_crop import take_picture
 from tensorflow.keras.models import load_model
@@ -43,9 +42,9 @@ class Craps():
             self.debug_die1 = None
             self.debug_die2 = None
             self.debug_dice_total = None
-        #VIDEO CAPTURE
-        self.cap = cv2.VideoCapture(0)
-        #cap.release()
+        
+
+        self.model = load_model('./models/craps-ai/opencv_cnn.h5')
 
     @staticmethod
     def initialize_stats():
@@ -117,19 +116,26 @@ class Craps():
                 if not dice_values or not crops or not frame==None:
                     crops = take_picture(frame)
                     for crop in crops:
-                        dice_values.append(np.argmax(self.model.predict(np.expand_dims(crop, axis=0)))+1)
+                        dice_values.append(np.argmax(self.model.predict(np.expand_dims(crop, axis=0),  verbose=0))+1)
                     if len(dice_values) == len(self.dice):
-                        for i, die in enumerate(self.dice):
-                            print(f'Dice {i+1}: {dice_values[i]}')
-                            die.reset(dice_values[i], crops[i])
-                        if prepare.DEBUG:
-                            print(self.history)
+                        if len(self.history) == 0: 
+                          for i, die in enumerate(self.dice):
+                              # print(f'Dice {i+1}: {dice_values[i]}')
+                              die.reset_cnn(dice_values[i], crops[i])
+                          if prepare.DEBUG:
+                              print(self.history)
+                        elif dice_values != self.history[-1]: # no new roll if the last roll is the same
+                          for i, die in enumerate(self.dice):
+                              # print(f'Dice {i+1}: {dice_values[i]}')
+                              die.reset_cnn(dice_values[i], crops[i])
+                          if prepare.DEBUG:
+                              print(self.history)
 
                         self.get_dice_total(pg.time.get_ticks())
                     else:
-                      print('Wrong number of dice, please re-roll')
+                      print(f'Game Thread: Wrong number of dice {len(dice_values)}. Expected {len(self.dice)}, please re-roll')
                 else:
-                    print(f"Game Thread: Could not predict the roll")
+                    print(f"Game Thread: The CNN could not predict the roll")
                 
             elif mode == "yolo":
                 pass

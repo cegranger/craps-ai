@@ -334,7 +334,7 @@ def game_with_frame_buffer(event_queue, frame_buffer, webcam_buffer):
     
     # AI detection variables
     last_detection_time = time.time()
-    detection_cooldown = 2.0  # seconds between detections
+    detection_cooldown = 5.0  # seconds between detections
     
     print("Game thread: Starting game loop...")
     
@@ -363,15 +363,15 @@ def game_with_frame_buffer(event_queue, frame_buffer, webcam_buffer):
         
         # AI mode processing - get webcam frame and detect dice
         if current_mode in ["cnn", "yolo"]:
-            print(f"Game thread: reading webcam_buffer")
+            # print(f"Game thread: reading webcam_buffer")
             webcam_frame, webcam_frame_num = webcam_buffer.read()
-            
             if webcam_frame is not None:
                 # Check cooldown to avoid too frequent detections
                 current_time = time.time()
                 if current_time - last_detection_time >= detection_cooldown:
-                    
+                    last_detection_time = current_time
                     game.roll(mode="cnn", frame=webcam_frame)
+
                     # TODO: Implement actual dice detection here
                     # For now, we'll just simulate detection
                     # You would call your CNN or YOLO model here
@@ -381,11 +381,10 @@ def game_with_frame_buffer(event_queue, frame_buffer, webcam_buffer):
                     # if detected_dice:
                     #     print(f"Game thread: Detected dice values: {detected_dice}")
                     #     game.roll(current_mode, dice_values=detected_dice)
-                    #     last_detection_time = current_time
                     
                     # For demonstration, just print that we have a webcam frame
-                    print(f"Game thread: Processing webcam frame in {current_mode} mode (frame #{webcam_frame_num})")
-                    print(f"  Frame shape: {webcam_frame.shape}")
+                    # print(f"Game thread: Processing webcam frame in {current_mode} mode (frame #{webcam_frame_num})")
+                    # print(f"  Frame shape: {webcam_frame.shape}")
                     
                     # You can add your detection logic here:
                     # 1. Preprocess the webcam frame
