@@ -17,6 +17,8 @@ class DiceDetector:
         self.capture_stable_count = 0
         self.last_detection = None
         self.params = None
+        self.toggle_capture = 0
+        self.last_capture = 0
 
     def create_blob_detector(self, params):
         """Create blob detector with given parameters"""
@@ -153,6 +155,16 @@ class DiceDetector:
 
         return binary, overlay, dice_detections
 
+    def check_toggle(self):
+        if self.params['capture_mode'] and not self.last_capture:
+            self.toggle_capture = 1
+        else:
+            self.toggle_capture = 0
+        self.last_capture = self.params['capture_mode']
+
+
+
+
     def process_frame(self, frame, params):
         """Process a single frame"""
         # Update blob detector if
@@ -168,9 +180,39 @@ class DiceDetector:
 
         # Handle capture mode
         if params['capture_mode'] and detections:
+            self.check_toggle()
+            if self.toggle_capture:
+                self.save_to_json()
             self.handle_capture(detections)
 
         return binary, overlay, detections
+    
+    def save_to_json(self, file_name="datasets/opencv_params.json"):
+        """Save the class attributes to a JSON file."""
+        # Create a dictionary from the class attributes
+        data = {
+            "detection_method": self.params["detection_method"],
+            "edge_detection": {
+                "threshold_value": self.params["threshold"]
+            },
+            "blob_detection": {
+                "min_blob_area": self.params["min_blob_area"],
+                "max_blob_area": self.params["max_blob_area"],
+                "min_circularity": self.params["circularity"],
+                "min_convexity": self.params["convexity"],
+                "min_inertia": self.params["inertia"]
+            },
+            "dbscan": {
+                "eps": self.params["dbscan_eps"]
+            }
+        }
+
+        # Write the dictionary to a JSON file
+        with open(file_name, "w") as json_file:
+            json.dump(data, json_file, indent=4)
+
+        print(f"Parameters saved to {file_name}")
+
 
     def handle_capture(self, detections):
         """Handle image capture for dataset creation"""
@@ -180,7 +222,7 @@ class DiceDetector:
         if self.last_detection == current_detection:
             self.capture_stable_count += 1
 
-            if self.capture_stable_count == 30:  # Stable for 30 frames
+            if self.capture_stable_count == 15:  # Stable for 30 frames
                 for detection in detections:
                     # Save image
                     timestamp = time.strftime("%Y%m%d-%H%M%S")
