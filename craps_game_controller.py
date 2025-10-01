@@ -12,7 +12,7 @@ from google.colab.output import eval_js
 from base64 import b64decode, b64encode
 
 class CrapsGameController:
-    def __init__(self, **kwargs):
+    def __init__(self):
         self.event_queue = queue.Queue()
         self.frame_buffer = ThreadSafeFrameBuffer()
         self.webcam_buffer = ThreadSafeFrameBuffer()  # New buffer for webcam frames
@@ -21,9 +21,6 @@ class CrapsGameController:
         self.current_mode = 'manual'
         self.webcam_active = False
         
-        self.use_yolo = kwargs.get('use_yolo', False)
-        self.user_model = kwargs.get('user_model', None)
-
         # Statistics
         self.stats = {
             'manual': 0,
@@ -52,7 +49,7 @@ class CrapsGameController:
             # Start the game thread with webcam buffer
             self.game_thread = threading.Thread(
                 target=game_with_frame_buffer,
-                args=(self.event_queue, self.frame_buffer, self.webcam_buffer, self.use_yolo, self.user_model),
+                args=(self.event_queue, self.frame_buffer, self.webcam_buffer),
                 daemon=True
             )
             self.game_thread.start()
@@ -208,15 +205,15 @@ def create_craps_interface():
     display(HTML(filename="craps_game.html"))
 
 
-def run_craps_game(**kwargs):
+def run_craps_game():
     """Main function to run the craps game system"""
     
     # Create the interface
     create_craps_interface()
     
     # Initialize controller
-    controller = CrapsGameController(**kwargs)
-
+    controller = CrapsGameController()
+    
     print("🎰 Craps Game Controller Ready!")
     print("1. Click 'Start Game' to begin")
     print("2. Select your game mode (Manual or AI)")
@@ -289,7 +286,7 @@ def run_craps_game(**kwargs):
 
 
 # Modified game function that uses frame buffer and webcam
-def game_with_frame_buffer(event_queue, frame_buffer, webcam_buffer, use_yolo, user_model):
+def game_with_frame_buffer(event_queue, frame_buffer, webcam_buffer):
     """Game thread that sends frames to buffer and receives webcam frames"""
     import os
     os.environ["SDL_VIDEODRIVER"] = "dummy"
@@ -326,7 +323,7 @@ def game_with_frame_buffer(event_queue, frame_buffer, webcam_buffer, use_yolo, u
     casino_player = CasinoPlayer(stats)
     
     # Initialize the Craps game
-    game = Craps({"use_yolo": use_yolo, "user_model": user_model, "webcam_buffer": webcam_buffer})
+    game = Craps()
     game.startup(pg.time.get_ticks(), {"casino_player": casino_player})
     
     # Game loop variables
@@ -373,7 +370,7 @@ def game_with_frame_buffer(event_queue, frame_buffer, webcam_buffer, use_yolo, u
                 current_time = time.time()
                 if current_time - last_detection_time >= detection_cooldown:
                     last_detection_time = current_time
-                    game.roll(mode=current_mode, frame=webcam_frame)
+                    game.roll(mode="cnn", frame=webcam_frame)
 
                     # TODO: Implement actual dice detection here
                     # For now, we'll just simulate detection

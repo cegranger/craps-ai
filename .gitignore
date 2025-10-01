@@ -3,4 +3,3 @@ __pycache__
 .vscode
 *.bak
 env/
-.ipynb_checkpoints
