@@ -88,9 +88,7 @@ def load_model(model_path):
     return model
 
 
-def take_picture(cap, model, conf=0.5):
-    ret, frame = cap.read()
-
+def take_picture(frame, model, conf=0.5):
     values = []
     crops = []
     results = model.predict(frame, conf=0.5)
@@ -232,11 +230,12 @@ def stable_predict(
     previous_detections, current_detections = result_queue
 
     bbox_tracker = {}
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            print("Failed to read frame.")
-            break
+    while cap is not None:
+        frame, count = cap.read()
+        if not frame:
+            # print("Failed to read frame.")
+            # break
+            continue
 
         # print(f"Processing frame of shape: {frame.shape}")
         frame_boxes = []

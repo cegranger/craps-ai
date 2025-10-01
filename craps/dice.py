@@ -71,14 +71,18 @@ class Die:
                 else:
                     surface.blit(self.dice_large[self.roll_value], self.dice_large_pos)
 
-    def reset(self):
+    def reset(self, dice_value=None, crop=None):
         if not self.rolling:
             self.draw_dice = True
             self.dice_speed = 40
             self.dice_moving_left = True
             self.rolling = True
             self.dice_rect.center = self.dice_starting_pos
-            self.roll_value = random.randint(0,5)
+            if dice_value:
+                self.roll_value = dice_value - 1
+            else:
+                self.roll_value = random.randint(0,5)
+            self.crop = crop
 
     def value(self):
         if not self.rolling and not self.draw_dice:
