@@ -1,12 +1,147 @@
-import ipywidgets as widgets
-from IPython.display import display
+import cv2
+import numpy as np
+import base64
+import io
+import json
+import time
 import queue
 import threading
-import time
-from datetime import datetime
-import numpy as np
 from PIL import Image
-import io
+from IPython.display import display, Javascript, HTML
+from google.colab.output import eval_js
+from base64 import b64decode, b64encode
+
+class CrapsGameController:
+    def __init__(self):
+        self.event_queue = queue.Queue()
+        self.frame_buffer = ThreadSafeFrameBuffer()
+        self.webcam_buffer = ThreadSafeFrameBuffer()  # New buffer for webcam frames
+        self.game_thread = None
+        self.game_running = False
+        self.current_mode = 'manual'
+        self.webcam_active = False
+        
+        # Statistics
+        self.stats = {
+            'manual': 0,
+            'cnn': 0,
+            'yolo': 0
+        }
+        
+        # Performance tracking
+        self.fps = 0
+        self.fps_update_time = time.time()
+        self.fps_frame_count = 0
+        self.last_frame_number = 0
+        
+        # Webcam tracking
+        self.last_webcam_time = time.time()
+        self.webcam_frame_count = 0
+        
+    def start_game_thread(self):
+        """Start the game thread"""
+        if not self.game_running:
+            self.game_running = True
+            
+            # Send initial mode to game thread
+            self.event_queue.put(f"mode:{self.current_mode}")
+            
+            # Start the game thread with webcam buffer
+            self.game_thread = threading.Thread(
+                target=game_with_frame_buffer,
+                args=(self.event_queue, self.frame_buffer, self.webcam_buffer),
+                daemon=True
+            )
+            self.game_thread.start()
+            print("🎰 Game thread started!")
+            
+    def stop_game_thread(self):
+        """Stop the game thread"""
+        if self.game_running:
+            self.event_queue.put("quit")
+            if self.game_thread:
+                self.game_thread.join(timeout=2.0)
+            self.game_running = False
+            print("🚪 Game thread stopped.")
+            
+    def handle_event(self, event_type, event_data=None):
+        """Handle events from JavaScript"""
+        if event_type == "start":
+            self.start_game_thread()
+            
+        elif event_type == "quit":
+            self.stop_game_thread()
+            
+        elif event_type == "roll":
+            if self.current_mode == 'manual':
+                self.event_queue.put("roll")
+                self.stats['manual'] += 1
+                
+        elif event_type == "mode":
+            self.current_mode = event_data
+            if self.game_running:
+                self.event_queue.put(f"mode:{self.current_mode}")
+                
+    def process_webcam_frame(self, webcam_data):
+        """Process webcam frame from JavaScript and send to game thread"""
+        if webcam_data and webcam_data.get('frame'):
+            try:
+                # Decode base64 image
+                image_data = webcam_data['frame'].split(',')[1]
+                image_bytes = b64decode(image_data)
+                
+                # Convert to numpy array
+                jpg_as_np = np.frombuffer(image_bytes, dtype=np.uint8)
+                frame = cv2.imdecode(jpg_as_np, flags=cv2.IMREAD_COLOR)
+                
+                if frame is not None:
+                    # Write to webcam buffer for game thread to access
+                    self.webcam_buffer.write(frame)
+                    
+                    # Track webcam FPS
+                    self.webcam_frame_count += 1
+                    current_time = time.time()
+                    if current_time - self.last_webcam_time >= 1.0:
+                        webcam_fps = self.webcam_frame_count / (current_time - self.last_webcam_time)
+                        self.webcam_frame_count = 0
+                        self.last_webcam_time = current_time
+                        # print(f"📷 Webcam FPS: {webcam_fps:.1f}")
+                    
+                    return True
+            except Exception as e:
+                print(f"Error processing webcam frame: {e}")
+                return False
+        return False
+                
+    def get_current_frame(self):
+        """Get current frame and performance metrics"""
+        frame, frame_number = self.frame_buffer.read()
+        
+        if frame is not None and frame_number > self.last_frame_number:
+            self.last_frame_number = frame_number
+            
+            # Update FPS counter
+            self.fps_frame_count += 1
+            current_time = time.time()
+            if current_time - self.fps_update_time >= 1.0:
+                self.fps = self.fps_frame_count / (current_time - self.fps_update_time)
+                self.fps_frame_count = 0
+                self.fps_update_time = current_time
+            
+            # Convert frame to base64
+            frame_base64 = image_to_base64(frame)
+            
+            return {
+                'frame': frame_base64,
+                'fps': self.fps,
+                'frame_number': frame_number,
+                'has_update': True
+            }
+        
+        return {
+            'has_update': False
+        }
+
 
 class ThreadSafeFrameBuffer:
     """Thread-safe frame buffer for passing frames between threads"""
@@ -14,24 +149,24 @@ class ThreadSafeFrameBuffer:
         self.frame = None
         self.frame_number = 0
         self.lock = threading.Lock()
-        self.new_frame_event = threading.Event()
         
     def write(self, frame):
-        """Write a new frame (from game thread)"""
+        """Write a new frame (from game thread or webcam)"""
         with self.lock:
-            # Convert pygame surface to numpy array if needed
+            # Convert to numpy array if needed
             if hasattr(frame, 'get_buffer'):
                 # It's a pygame surface
                 w, h = frame.get_size()
-                buf = frame.get_buffer()
-                # Convert to numpy array (RGB format)
-                self.frame = np.frombuffer(buf.raw, dtype=np.uint8).reshape((h, w, 3))
+                # Use pygame.surfarray for faster conversion
+                import pygame as pg
+                frame_array = pg.surfarray.array3d(frame)
+                # Transpose to get correct orientation
+                self.frame = np.transpose(frame_array, (1, 0, 2))
             else:
-                # Already numpy array or PIL image
+                # Already numpy array
                 self.frame = np.array(frame)
             
             self.frame_number += 1
-            self.new_frame_event.set()
     
     def read(self):
         """Read the current frame (from display thread)"""
@@ -39,313 +174,120 @@ class ThreadSafeFrameBuffer:
             if self.frame is not None:
                 return self.frame.copy(), self.frame_number
             return None, 0
-    
-    def wait_for_frame(self, timeout=0.1):
-        """Wait for a new frame with timeout"""
-        return self.new_frame_event.wait(timeout)
-    
-    def clear_event(self):
-        """Clear the new frame event"""
-        self.new_frame_event.clear()
 
-class CrapsGameController:
-    def __init__(self, event_queue, frame_buffer):
-        self.event_queue = event_queue
-        self.frame_buffer = frame_buffer
-        self.event_count = {'manual': 0, 'cnn': 0, 'yolo': 0, 'quit': 0}
-        self.game_running = False
-        self.last_frame_number = 0
-        self.fps = 0
-        self.fps_update_time = time.time()
-        self.fps_frame_count = 0
-        self.current_mode = 'manual'  # Can be 'manual', 'cnn', or 'yolo'
-        
-        # Create widgets
-        self.create_widgets()
-        
-    def create_widgets(self):
-        # Frame display widget
-        self.frame_display = widgets.Image(
-            format='png',
-            width=800,
-            height=600,
-            layout=widgets.Layout(
-                border='3px solid #333',
-                border_radius='5px'
-            )
-        )
-        
-        # Mode selector - unified for manual and AI models
-        self.mode_selector = widgets.RadioButtons(
-            options=[
-                ('🎮 Manual', 'manual'),
-                ('🤖 AI - CNN', 'cnn'),
-                ('🤖 AI - YOLO', 'yolo')
-            ],
-            value='manual',
-            description='Mode:',
-            layout=widgets.Layout(width='250px')
-        )
-        self.mode_selector.observe(self.on_mode_change, 'value')
-        
-        # Game control buttons
-        self.roll_button = widgets.Button(
-            description='🎲 Roll Dice',
-            button_style='success',
-            tooltip='Roll the dice manually!',
-            layout=widgets.Layout(width='150px', height='50px')
-        )
-        
-        self.quit_button = widgets.Button(
-            description='🚪 Cash Out',
-            button_style='danger',
-            tooltip='Quit the game',
-            layout=widgets.Layout(width='150px', height='50px')
-        )
-        
-        self.start_game_button = widgets.Button(
-            description='🎰 Start Game',
-            button_style='primary',
-            tooltip='Start the game thread',
-            layout=widgets.Layout(width='150px', height='50px')
-        )
-        
-        # Performance info
-        self.performance_label = widgets.HTML(
-            value=self._get_performance_html()
-        )
-        
-        # Game status
-        self.game_status = widgets.HTML(
-            value=self._get_status_html()
-        )
-        
-        # Event counters
-        self.counter_label = widgets.HTML(
-            value=self._get_counter_html()
-        )
-        
-        # Output area
-        self.output = widgets.Output(
-            layout=widgets.Layout(
-                height='200px',
-                width='100%',
-                border='1px solid #ddd',
-                overflow_y='auto',
-                padding='5px'
-            )
-        )
-        
-        # Connect handlers
-        self.roll_button.on_click(self.on_roll_click)
-        self.quit_button.on_click(self.on_quit_click)
-        self.start_game_button.on_click(self.on_start_game_click)
-        
-        # Start frame update thread
-        self.start_frame_updater()
-        
-    def on_mode_change(self, change):
-        """Handle mode change (manual, cnn, or yolo)"""
-        self.current_mode = change['new']
-        
-        # Update UI based on mode
-        if self.current_mode == 'manual':
-            self.roll_button.disabled = False
-            with self.output:
-                print(f"🎮 [{datetime.now().strftime('%H:%M:%S')}] Switched to Manual Mode")
-                print("   Use the 'Roll Dice' button to play")
-        else:
-            self.roll_button.disabled = True
-            mode_name = 'CNN' if self.current_mode == 'cnn' else 'YOLO'
-            with self.output:
-                print(f"🤖 [{datetime.now().strftime('%H:%M:%S')}] Switched to AI Mode ({mode_name})")
-                print(f"   AI will automatically detect dice rolls using {mode_name} model")
-        
-        # Send mode change to game thread if game is running
-        if self.game_running:
-            self.event_queue.put(f"mode:{self.current_mode}")
-        
-        # Update status display
-        self.game_status.value = self._get_status_html()
-        
-    def _get_performance_html(self):
-        return f"""
-        <div style="font-family: monospace; padding: 5px; background: #e8f5e9; border-radius: 5px;">
-            <b>⚡ Performance:</b> FPS: <span style="color: green; font-size: 1.2em;">{self.fps:.1f}</span> | 
-            Frame: <span style="color: blue;">{self.last_frame_number}</span>
-        </div>
-        """
-        
-    def _get_status_html(self):
-        status_color = "green" if self.game_running else "red"
-        status_text = "🟢 Running" if self.game_running else "🔴 Stopped"
-        
-        mode_icons = {
-            'manual': '🎮',
-            'cnn': '🤖',
-            'yolo': '🤖'
-        }
-        mode_names = {
-            'manual': 'Manual',
-            'cnn': 'AI - CNN',
-            'yolo': 'AI - YOLO'
-        }
-        
-        mode_icon = mode_icons.get(self.current_mode, '🎮')
-        mode_text = mode_names.get(self.current_mode, 'Manual')
-        
-        return f"""
-        <div style="font-family: monospace; padding: 10px; background: #f0f0f0; border-radius: 5px;">
-            <h4 style="margin: 0;">Game Status: <span style="color: {status_color};">{status_text}</span></h4>
-            <p style="margin: 5px 0 0 0;">Mode: {mode_icon} <b>{mode_text}</b></p>
-        </div>
-        """
-        
-    def _get_counter_html(self):
-        total_rolls = self.event_count['manual'] + self.event_count['cnn'] + self.event_count['yolo']
-        return f"""
-        <div style="font-family: monospace; padding: 10px; background: #f9f9f9; border-radius: 5px;">
-            <b>📊 Roll Statistics:</b><br>
-            🎮 Manual: <span style="color: green; font-size: 1.2em;">{self.event_count['manual']}</span><br>
-            🤖 CNN: <span style="color: blue; font-size: 1.2em;">{self.event_count['cnn']}</span><br>
-            🤖 YOLO: <span style="color: purple; font-size: 1.2em;">{self.event_count['yolo']}</span><br>
-            📈 Total: <span style="color: black; font-size: 1.2em;">{total_rolls}</span><br>
-            🚪 Quits: <span style="color: red; font-size: 1.2em;">{self.event_count['quit']}</span>
-        </div>
-        """
-        
-    def start_frame_updater(self):
-        """Start thread that updates frame display from shared buffer"""
-        def update_loop():
-            while True:
-                # Wait for new frame or timeout
-                if self.frame_buffer.wait_for_frame(timeout=0.05):  # 50ms timeout
-                    self.frame_buffer.clear_event()
-                    
-                    frame, frame_number = self.frame_buffer.read()
-                    if frame is not None and frame_number > self.last_frame_number:
-                        # Convert numpy array to PNG
-                        img = Image.fromarray(frame)
-                        buffer = io.BytesIO()
-                        img.save(buffer, format='PNG', optimize=False)  # No optimization for speed
-                        self.frame_display.value = buffer.getvalue()
-                        self.last_frame_number = frame_number
-                        
-                        # Update FPS counter
-                        self.fps_frame_count += 1
-                        current_time = time.time()
-                        if current_time - self.fps_update_time >= 1.0:
-                            self.fps = self.fps_frame_count / (current_time - self.fps_update_time)
-                            self.fps_frame_count = 0
-                            self.fps_update_time = current_time
-                            self.performance_label.value = self._get_performance_html()
-                
-        self.updater_thread = threading.Thread(target=update_loop, daemon=True)
-        self.updater_thread.start()
-        
-    def on_start_game_click(self, b):
-        """Start the game thread"""
-        if not self.game_running:
-            # Send initial mode to game thread
-            self.event_queue.put(f"mode:{self.current_mode}")
-            
-            # Start the modified game thread
-            self.game_thread = threading.Thread(
-                target=game_with_frame_buffer,
-                args=(self.event_queue, self.frame_buffer),
-                daemon=True
-            )
-            self.game_thread.start()
-            
-            self.game_running = True
-            self.game_status.value = self._get_status_html()
-            self.start_game_button.disabled = True
-            
-            mode_names = {
-                'manual': 'Manual',
-                'cnn': 'AI (CNN)',
-                'yolo': 'AI (YOLO)'
-            }
-            
-            with self.output:
-                print(f"🎰 [{datetime.now().strftime('%H:%M:%S')}] Game thread started!")
-                print(f"🎲 Game is ready in {mode_names[self.current_mode]} mode!")
-                if self.current_mode != 'manual':
-                    print(f"   AI will automatically detect dice rolls")
-                else:
-                    print("   Click 'Roll Dice' to play!")
-                
-    def on_roll_click(self, b):
-        if self.current_mode == 'manual':
-            self.event_queue.put(f"roll")
-            self.event_count['manual'] += 1
-            self.counter_label.value = self._get_counter_html()
-            with self.output:
-                print(f"🎲 [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Rolling dice manually...")
-        
-    def on_quit_click(self, b):
-        self.event_count['quit'] += 1
-        self.counter_label.value = self._get_counter_html()
-        self.game_running = False
-        self.game_status.value = self._get_status_html()
-        self.start_game_button.disabled = False
-        with self.output:
-            print(f"🚪 [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Cashing out... Game stopping.")
-        
-        self.event_queue.put("quit")
-        self.game_thread.join()
-        self.updater_thread.join()
-        with self.output:
-            print(f"🚪 [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Cashing out... Game stopped.")
-            
-    def display(self):
-        # Title
-        title = widgets.HTML('''
-        <div style="text-align: center; padding: 10px; background: linear-gradient(90deg, #2e7d32, #1976d2); color: white; border-radius: 10px;">
-            <h2 style="margin: 0;">🎰 Craps Game Controller 🎲</h2>
-        </div>
-        ''')
-        
-        # Mode controls
-        mode_controls_title = widgets.HTML('<h3>⚙️ Game Mode</h3>')
-        mode_controls = widgets.VBox([
-            self.mode_selector
-        ], layout=widgets.Layout(margin='10px', padding='10px', border='1px solid #ddd', border_radius='5px'))
-        
-        # Game controls
-        game_controls_title = widgets.HTML('<h3>🎮 Game Controls</h3>')
-        game_buttons = widgets.HBox(
-            [self.start_game_button, self.roll_button, self.quit_button],
-            layout=widgets.Layout(justify_content='space-around', margin='10px')
-        )
-        
-        # Left panel
-        left_panel = widgets.VBox([
-            mode_controls_title,
-            mode_controls,
-            game_controls_title,
-            game_buttons,
-            self.game_status,
-            self.counter_label,
-            self.performance_label,
-            widgets.HTML('<h4>📋 Game Log:</h4>'),
-            self.output
-        ], layout=widgets.Layout(width='450px', padding='10px'))
-        
-        # Right panel
-        right_panel = widgets.VBox([
-            widgets.HTML('<h3 style="text-align: center;">🎮 Game Display</h3>'),
-            self.frame_display
-        ], layout=widgets.Layout(padding='10px'))
-        
-        # Main layout
-        main_content = widgets.HBox([left_panel, right_panel], layout=widgets.Layout(gap='20px'))
-        
-        return widgets.VBox([title, main_content])
 
-# Modified game function that uses frame buffer instead of saving files
-def game_with_frame_buffer(event_queue, frame_buffer):
-    """Modified game thread that sends frames to buffer instead of saving files"""
+def image_to_base64(img, format='png'):
+    """Convert numpy array to base64 string"""
+    if img is None:
+        return ""
+    
+    # Ensure RGB format
+    if len(img.shape) == 2:  # Grayscale
+        img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+    elif img.shape[2] == 4:  # RGBA
+        img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
+    # If already RGB, no conversion needed
+    
+    # Convert to PIL Image
+    pil_img = Image.fromarray(img.astype('uint8'))
+    
+    # Save to bytes
+    buffer = io.BytesIO()
+    pil_img.save(buffer, format=format.upper(), optimize=False)
+    
+    # Encode to base64
+    img_str = base64.b64encode(buffer.getvalue()).decode()
+    return f"data:image/{format};base64,{img_str}"
+
+
+def create_craps_interface():
+    """Display the HTML interface"""
+    display(HTML(filename="craps_game.html"))
+
+
+def run_craps_game():
+    """Main function to run the craps game system"""
+    
+    # Create the interface
+    create_craps_interface()
+    
+    # Initialize controller
+    controller = CrapsGameController()
+    
+    print("🎰 Craps Game Controller Ready!")
+    print("1. Click 'Start Game' to begin")
+    print("2. Select your game mode (Manual or AI)")
+    print("3. In AI mode, click 'Start Webcam' to enable dice detection")
+    print("4. Click 'Roll Dice' in manual mode or let AI play")
+    print("5. Click 'Cash Out' to stop the game")
+    
+    # Main processing loop
+    while True:
+        try:
+            # Get state from JavaScript
+            js_state = eval_js('window.getGameState()')
+            
+            if not js_state:
+                time.sleep(0.05)
+                continue
+            
+            # Handle state changes
+            if js_state.get('running') and not controller.game_running:
+                controller.handle_event("start")
+                
+            elif not js_state.get('running') and controller.game_running:
+                controller.handle_event("quit")
+                break
+            
+            # Handle mode changes
+            if js_state.get('mode') != controller.current_mode:
+                controller.handle_event("mode", js_state.get('mode'))
+            
+            # Handle webcam state
+            controller.webcam_active = js_state.get('webcamActive', False)
+            
+            # Check for manual roll (stats change indicates roll)
+            if js_state.get('stats', {}).get('manual', 0) > controller.stats['manual']:
+                controller.handle_event("roll")
+            
+            # Get webcam frame if in AI mode and webcam is active
+            if controller.webcam_active and controller.current_mode in ['cnn', 'yolo']:
+                webcam_data = eval_js('window.getWebcamFrame()')
+                if webcam_data:
+                    controller.process_webcam_frame(webcam_data)
+            
+            # Get and update game frame
+            frame_data = controller.get_current_frame()
+            
+            if frame_data['has_update']:
+                # Update the display
+                eval_js(f'''
+                    window.updateGameFrame(
+                        "{frame_data['frame']}", 
+                        {frame_data['fps']}, 
+                        {frame_data['frame_number']}
+                    )
+                ''')
+            
+            # Small delay to prevent CPU overuse
+            time.sleep(0.033)  # ~30 FPS
+            
+        except KeyboardInterrupt:
+            print("\n🛑 Stopping craps game...")
+            controller.stop_game_thread()
+            break
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            import traceback
+            traceback.print_exc()
+            continue
+    
+    print("🎰 Craps game stopped.")
+
+
+# Modified game function that uses frame buffer and webcam
+def game_with_frame_buffer(event_queue, frame_buffer, webcam_buffer):
+    """Game thread that sends frames to buffer and receives webcam frames"""
     import os
     os.environ["SDL_VIDEODRIVER"] = "dummy"
     
@@ -388,58 +330,79 @@ def game_with_frame_buffer(event_queue, frame_buffer):
     running = True
     dt = 0
     scale = (1, 1)
-    current_mode = 'manual'  # Track current mode: 'manual', 'cnn', or 'yolo'
+    current_mode = 'manual'
+    
+    # AI detection variables
+    last_detection_time = time.time()
+    detection_cooldown = 2.0  # seconds between detections
+    
+    print("Game thread: Starting game loop...")
     
     while running:
+        # Process events from queue
         try:
             event = event_queue.get(block=False)
             
             if event == "quit":
                 print("Game thread: Quitting the game...")
-                game.get_event(pg.QUIT)
                 running = False
+                
             elif event == "roll":
                 # Manual roll
-                game.roll("manual")
+                print("Game thread: Manual roll triggered")
+                game.roll(mode="manual")
+                
             elif event.startswith("mode:"):
                 # Update mode
                 current_mode = event.split(":")[1]
-                if current_mode not in ["manual", "cnn", "yolo"]:
-                    raise ValueError(f"Game thread: Invalid mode: {current_mode}")
                 print(f"Game thread: Mode set to {current_mode}")
-            else:
-                print(f"Wrong event name {event}!")
                 
             event_queue.task_done()
         except queue.Empty:
             pass
         
-        
-        if current_mode == "cnn":
-            print(f"Game thread: rolling with {current_mode}")
-            pass
-        elif current_mode == "yolo":
-            print(f"Game thread: rolling with {current_mode}")
-            pass
+        # AI mode processing - get webcam frame and detect dice
+        if current_mode in ["cnn", "yolo"]:
+            print(f"Game thread: reading webcam_buffer")
+            webcam_frame, webcam_frame_num = webcam_buffer.read()
+            
+            if webcam_frame is not None:
+                # Check cooldown to avoid too frequent detections
+                current_time = time.time()
+                if current_time - last_detection_time >= detection_cooldown:
+                    
+                    game.roll(mode="cnn", frame=webcam_frame)
+                    # TODO: Implement actual dice detection here
+                    # For now, we'll just simulate detection
+                    # You would call your CNN or YOLO model here
+                    
+                    # Example placeholder for dice detection:
+                    # detected_dice = detect_dice_with_model(webcam_frame, current_mode)
+                    # if detected_dice:
+                    #     print(f"Game thread: Detected dice values: {detected_dice}")
+                    #     game.roll(current_mode, dice_values=detected_dice)
+                    #     last_detection_time = current_time
+                    
+                    # For demonstration, just print that we have a webcam frame
+                    print(f"Game thread: Processing webcam frame in {current_mode} mode (frame #{webcam_frame_num})")
+                    print(f"  Frame shape: {webcam_frame.shape}")
+                    
+                    # You can add your detection logic here:
+                    # 1. Preprocess the webcam frame
+                    # 2. Run through your CNN or YOLO model
+                    # 3. Extract dice values
+                    # 4. Trigger game roll with detected values
         
         # Update game state
         keys = pg.key.get_pressed()
         current_time = pg.time.get_ticks()
         game.update(screen, keys, current_time, dt, scale)
         
-        # Send frame to buffer instead of saving to file
-        # Convert surface to RGB array
-        w, h = screen.get_size()
-        # pygame.surfarray is faster but requires numpy
-        frame_array = pg.surfarray.array3d(screen)
-        # Transpose to get correct orientation (pygame uses (width, height, channels))
-        frame_array = np.transpose(frame_array, (1, 0, 2))
-        
-        # Write to shared buffer
-        frame_buffer.write(frame_array)
+        # Send frame to buffer
+        frame_buffer.write(screen)
         
         # Cap frame rate
-        dt = clock.tick(15)
+        dt = clock.tick(30)  # 30 FPS
     
-    print("Game Thread: Closing the thread...")
+    print("Game Thread: Closing...")
     pg.quit()

@@ -6,7 +6,11 @@ import cv2
 from . import tools, prepare
 from .components.labels import NeonButton, Label, ButtonGroup, TextBox
 from . import craps_data, dice, point_chip
-from .opencv_dice import take_picture
+
+
+import numpy as np
+from .opencv_crop import take_picture
+from tensorflow.keras.models import load_model
 
 
 class Craps():
@@ -92,7 +96,7 @@ class Craps():
         except IndexError: #user didnt input correct format "VALUE VALUE"
             print('Input needs to be "VALUE VALUE"')
 
-    def roll(self, mode="manual", *args):
+    def roll(self, mode="manual", frame=None, *args):
         if mode not in ["manual", "cnn", "yolo"]:
             raise ValueError(f"Invalid mode: {mode}")
         
@@ -107,7 +111,26 @@ class Craps():
                 print(f"Game Thread: Rolled {self.dice[0].value() + self.dice[1].value()}")
                     
             elif mode == "cnn":
-                pass
+                dice_values = []
+                crops = []
+
+                if not dice_values or not crops or not frame==None:
+                    crops = take_picture(frame)
+                    for crop in crops:
+                        dice_values.append(np.argmax(self.model.predict(np.expand_dims(crop, axis=0)))+1)
+                    if len(dice_values) == len(self.dice):
+                        for i, die in enumerate(self.dice):
+                            print(f'Dice {i+1}: {dice_values[i]}')
+                            die.reset(dice_values[i], crops[i])
+                        if prepare.DEBUG:
+                            print(self.history)
+
+                        self.get_dice_total(pg.time.get_ticks())
+                    else:
+                      print('Wrong number of dice, please re-roll')
+                else:
+                    print(f"Game Thread: Could not predict the roll")
+                
             elif mode == "yolo":
                 pass
                 

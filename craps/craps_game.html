@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Craps Game Controller</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(90deg, #2e7d32, #1976d2);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2em;
+            margin: 0;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 450px 1fr;
+            gap: 20px;
+            padding: 20px;
+        }
+
+        .left-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .section {
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+        }
+
+        .section h3 {
+            margin-bottom: 15px;
+            color: #333;
+            border-bottom: 2px solid #1976d2;
+            padding-bottom: 8px;
+        }
+
+        .mode-selector {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .mode-option {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            background: white;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .mode-option:hover {
+            border-color: #1976d2;
+            transform: translateX(5px);
+        }
+
+        .mode-option.active {
+            border-color: #1976d2;
+            background: #e3f2fd;
+        }
+
+        .mode-option input[type="radio"] {
+            margin-right: 10px;
+            width: 20px;
+            height: 20px;
+        }
+
+        .mode-option label {
+            cursor: pointer;
+            font-size: 1.1em;
+            flex: 1;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            flex: 1;
+            min-width: 140px;
+            padding: 15px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+
+        .btn:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: #1976d2;
+            color: white;
+        }
+
+        .btn-success {
+            background: #2e7d32;
+            color: white;
+        }
+
+        .btn-danger {
+            background: #c62828;
+            color: white;
+        }
+
+        .btn-info {
+            background: #0288d1;
+            color: white;
+        }
+
+        .status-box {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #1976d2;
+        }
+
+        .status-box h4 {
+            margin-bottom: 8px;
+            color: #333;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.running {
+            background: #4caf50;
+        }
+
+        .status-indicator.stopped {
+            background: #f44336;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .stat-item {
+            background: white;
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+            border: 1px solid #ddd;
+        }
+
+        .stat-label {
+            font-size: 0.85em;
+            color: #666;
+            margin-bottom: 4px;
+        }
+
+        .stat-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #1976d2;
+        }
+
+        .performance-box {
+            background: #e8f5e9;
+            padding: 12px;
+            border-radius: 6px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+        }
+
+        .performance-item {
+            text-align: center;
+        }
+
+        .performance-label {
+            font-size: 0.85em;
+            color: #666;
+        }
+
+        .performance-value {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #2e7d32;
+        }
+
+        .log-container {
+            background: #1e1e1e;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            padding: 15px;
+            border-radius: 6px;
+            height: 250px;
+            overflow-y: auto;
+            border: 2px solid #333;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+            line-height: 1.4;
+        }
+
+        .log-entry .timestamp {
+            color: #888;
+        }
+
+        .right-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .game-display {
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 3px solid #333;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 500px;
+        }
+
+        .game-display canvas {
+            max-width: 100%;
+            max-height: 100%;
+            display: block;
+        }
+
+        .game-display img {
+            max-width: 100%;
+            max-height: 100%;
+            display: block;
+        }
+
+        .webcam-container {
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 3px solid #333;
+            position: relative;
+            min-height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .webcam-container video {
+            max-width: 100%;
+            max-height: 100%;
+            display: block;
+        }
+
+        .webcam-overlay {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 5px;
+            font-size: 0.9em;
+        }
+
+        .webcam-controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        @media (max-width: 1200px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎰 Craps Game Controller 🎲</h1>
+        </div>
+
+        <div class="main-content">
+            <div class="left-panel">
+                <!-- Game Mode Section -->
+                <div class="section">
+                    <h3>⚙️ Game Mode</h3>
+                    <div class="mode-selector">
+                        <div class="mode-option active" onclick="selectMode('manual')">
+                            <input type="radio" id="mode-manual" name="mode" value="manual" checked>
+                            <label for="mode-manual">🎮 Manual</label>
+                        </div>
+                        <div class="mode-option" onclick="selectMode('cnn')">
+                            <input type="radio" id="mode-cnn" name="mode" value="cnn">
+                            <label for="mode-cnn">🤖 AI - CNN</label>
+                        </div>
+                        <div class="mode-option" onclick="selectMode('yolo')">
+                            <input type="radio" id="mode-yolo" name="mode" value="yolo">
+                            <label for="mode-yolo">🤖 AI - YOLO</label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Game Controls Section -->
+                <div class="section">
+                    <h3>🎮 Game Controls</h3>
+                    <div class="button-group">
+                        <button class="btn btn-primary" id="startBtn" onclick="startGame()">
+                            🎰 Start Game
+                        </button>
+                        <button class="btn btn-success" id="rollBtn" onclick="rollDice()" disabled>
+                            🎲 Roll Dice
+                        </button>
+                        <button class="btn btn-danger" id="quitBtn" onclick="quitGame()" disabled>
+                            🚪 Cash Out
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Game Status Section -->
+                <div class="section">
+                    <h3>📊 Game Status</h3>
+                    <div class="status-box">
+                        <h4>
+                            <span class="status-indicator stopped" id="statusIndicator"></span>
+                            <span id="statusText">Game Stopped</span>
+                        </h4>
+                        <p style="margin-top: 8px;">
+                            Mode: <strong id="currentMode">🎮 Manual</strong>
+                        </p>
+                        <p style="margin-top: 4px;">
+                            Webcam: <strong id="webcamStatus">❌ Off</strong>
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Statistics Section -->
+                <div class="section">
+                    <h3>📈 Roll Statistics</h3>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-label">🎮 Manual</div>
+                            <div class="stat-value" id="stat-manual">0</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">🤖 CNN</div>
+                            <div class="stat-value" id="stat-cnn">0</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">🤖 YOLO</div>
+                            <div class="stat-value" id="stat-yolo">0</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">📈 Total</div>
+                            <div class="stat-value" id="stat-total">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Performance Section -->
+                <div class="section">
+                    <h3>⚡ Performance</h3>
+                    <div class="performance-box">
+                        <div class="performance-item">
+                            <div class="performance-label">FPS</div>
+                            <div class="performance-value" id="fps">0.0</div>
+                        </div>
+                        <div class="performance-item">
+                            <div class="performance-label">Frame #</div>
+                            <div class="performance-value" id="frameNumber">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Game Log Section -->
+                <div class="section">
+                    <h3>📋 Game Log</h3>
+                    <div class="log-container" id="gameLog">
+                        <div class="log-entry">
+                            <span class="timestamp">[--:--:--]</span> Waiting to start...
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="right-panel">
+                <!-- Game Display -->
+                <div class="section" style="flex: 1; display: flex; flex-direction: column;">
+                    <h3 style="text-align: center;">🎮 Game Display</h3>
+                    <div class="game-display" style="flex: 1;">
+                        <img id="gameFrame" src="" alt="Game will appear here" style="display: none;">
+                        <div id="placeholderText" style="color: #666; font-size: 1.2em;">
+                            Click "Start Game" to begin
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Webcam Display -->
+                <div class="section">
+                    <h3 style="text-align: center;">📷 Webcam Feed (AI Mode)</h3>
+                    <div class="webcam-container">
+                        <video id="webcamVideo" autoplay playsinline style="display: none;"></video>
+                        <canvas id="webcamCanvas" style="display: none;"></canvas>
+                        <div id="webcamPlaceholder" style="color: #666; font-size: 1em; text-align: center;">
+                            Webcam will activate in AI mode
+                        </div>
+                        <div class="webcam-overlay" id="webcamOverlay" style="display: none;">
+                            <span id="webcamFPS">0 FPS</span>
+                        </div>
+                    </div>
+                    <div class="webcam-controls">
+                        <button class="btn btn-info" id="startWebcamBtn" onclick="startWebcam()" style="flex: 1;">
+                            📷 Start Webcam
+                        </button>
+                        <button class="btn btn-danger" id="stopWebcamBtn" onclick="stopWebcam()" style="flex: 1;" disabled>
+                            🛑 Stop Webcam
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Game state
+        let gameState = {
+            running: false,
+            currentMode: 'manual',
+            stats: {
+                manual: 0,
+                cnn: 0,
+                yolo: 0
+            },
+            fps: 0,
+            frameNumber: 0,
+            webcamActive: false  // Added webcam state
+        };
+
+        // Webcam state
+        let webcamStream = null;
+        let webcamCanvas = null;
+        let webcamContext = null;
+        let webcamVideo = null;
+        let webcamAnimationId = null;
+        let webcamFPS = 0;
+        let webcamFrameCount = 0;
+        let webcamLastTime = Date.now();
+
+        // UI Elements
+        const elements = {
+            startBtn: document.getElementById('startBtn'),
+            rollBtn: document.getElementById('rollBtn'),
+            quitBtn: document.getElementById('quitBtn'),
+            statusIndicator: document.getElementById('statusIndicator'),
+            statusText: document.getElementById('statusText'),
+            currentMode: document.getElementById('currentMode'),
+            webcamStatus: document.getElementById('webcamStatus'),
+            gameFrame: document.getElementById('gameFrame'),
+            placeholderText: document.getElementById('placeholderText'),
+            gameLog: document.getElementById('gameLog'),
+            fps: document.getElementById('fps'),
+            frameNumber: document.getElementById('frameNumber'),
+            webcamVideo: document.getElementById('webcamVideo'),
+            webcamCanvas: document.getElementById('webcamCanvas'),
+            webcamPlaceholder: document.getElementById('webcamPlaceholder'),
+            webcamOverlay: document.getElementById('webcamOverlay'),
+            webcamFPS: document.getElementById('webcamFPS'),
+            startWebcamBtn: document.getElementById('startWebcamBtn'),
+            stopWebcamBtn: document.getElementById('stopWebcamBtn')
+        };
+
+        // Mode icons
+        const modeIcons = {
+            'manual': '🎮 Manual',
+            'cnn': '🤖 AI - CNN',
+            'yolo': '🤖 AI - YOLO'
+        };
+
+        // Initialize webcam canvas
+        webcamCanvas = elements.webcamCanvas;
+        webcamContext = webcamCanvas.getContext('2d');
+        webcamVideo = elements.webcamVideo;
+
+        // Select mode
+        function selectMode(mode) {
+            gameState.currentMode = mode;
+            
+            // Update UI
+            document.querySelectorAll('.mode-option').forEach(opt => {
+                opt.classList.remove('active');
+            });
+            event.currentTarget.classList.add('active');
+            document.getElementById(`mode-${mode}`).checked = true;
+            elements.currentMode.textContent = modeIcons[mode];
+            
+            // Enable/disable roll button
+            if (gameState.running) {
+                elements.rollBtn.disabled = (mode !== 'manual');
+            }
+            
+            // Auto-start webcam in AI mode
+            if ((mode === 'cnn' || mode === 'yolo') && !gameState.webcamActive) {
+                addLog(`AI mode requires webcam - click "Start Webcam" button`);
+            }
+            
+            addLog(`Mode changed to ${modeIcons[mode]}`);
+        }
+
+        // Start webcam
+        async function startWebcam() {
+            try {
+                webcamStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: 640, 
+                        height: 480,
+                        facingMode: 'environment' 
+                    } 
+                });
+                
+                webcamVideo.srcObject = webcamStream;
+                webcamVideo.play();
+                
+                webcamVideo.onloadedmetadata = () => {
+                    webcamCanvas.width = webcamVideo.videoWidth;
+                    webcamCanvas.height = webcamVideo.videoHeight;
+                    
+                    elements.webcamPlaceholder.style.display = 'none';
+                    elements.webcamVideo.style.display = 'block';
+                    elements.webcamOverlay.style.display = 'block';
+                    
+                    gameState.webcamActive = true;  // SET TO TRUE
+                    elements.webcamStatus.textContent = '✅ Active';
+                    elements.startWebcamBtn.disabled = true;
+                    elements.stopWebcamBtn.disabled = false;
+                    
+                    addLog('📷 Webcam started successfully', 'success');
+                    console.log('Webcam active state set to:', gameState.webcamActive);
+                    
+                    // Start capturing frames
+                    captureWebcamFrame();
+                };
+            } catch (error) {
+                addLog(`❌ Webcam error: ${error.message}`, 'danger');
+                console.error('Webcam error:', error);
+                gameState.webcamActive = false;  // SET TO FALSE ON ERROR
+            }
+        }
+
+        // Stop webcam
+        function stopWebcam() {
+            if (webcamStream) {
+                webcamStream.getTracks().forEach(track => track.stop());
+                webcamStream = null;
+            }
+            
+            if (webcamAnimationId) {
+                cancelAnimationFrame(webcamAnimationId);
+                webcamAnimationId = null;
+            }
+            
+            elements.webcamVideo.style.display = 'none';
+            elements.webcamPlaceholder.style.display = 'block';
+            elements.webcamOverlay.style.display = 'none';
+            
+            gameState.webcamActive = false;  // SET TO FALSE
+            
+            elements.webcamStatus.textContent = '❌ Off';
+            elements.startWebcamBtn.disabled = false;
+            elements.stopWebcamBtn.disabled = true;
+            
+            addLog('📷 Webcam stopped');
+            console.log('Webcam active state set to:', gameState.webcamActive);
+        }
+
+        // Capture webcam frame
+        function captureWebcamFrame() {
+            if (!gameState.webcamActive || webcamVideo.readyState !== webcamVideo.HAVE_ENOUGH_DATA) {
+                webcamAnimationId = requestAnimationFrame(captureWebcamFrame);
+                return;
+            }
+            
+            // Draw video frame to canvas
+            webcamContext.drawImage(webcamVideo, 0, 0, webcamCanvas.width, webcamCanvas.height);
+            
+            // Update FPS counter
+            webcamFrameCount++;
+            const now = Date.now();
+            if (now - webcamLastTime >= 1000) {
+                webcamFPS = webcamFrameCount;
+                webcamFrameCount = 0;
+                webcamLastTime = now;
+                elements.webcamFPS.textContent = `${webcamFPS} FPS`;
+            }
+            
+            // Continue capturing
+            webcamAnimationId = requestAnimationFrame(captureWebcamFrame);
+        }
+
+        // Get webcam frame as base64 (called from Python)
+        window.getWebcamFrame = function() {
+            if (!gameState.webcamActive || !webcamCanvas) {
+                return null;
+            }
+            
+            try {
+                // Convert canvas to base64
+                const imageData = webcamCanvas.toDataURL('image/jpeg', 0.8);
+                return {
+                    frame: imageData,
+                    width: webcamCanvas.width,
+                    height: webcamCanvas.height,
+                    timestamp: Date.now()
+                };
+            } catch (error) {
+                console.error('Error capturing webcam frame:', error);
+                return null;
+            }
+        };
+
+        // Start game
+        function startGame() {
+            gameState.running = true;
+            updateGameStatus();
+            
+            elements.startBtn.disabled = true;
+            elements.rollBtn.disabled = (gameState.currentMode !== 'manual');
+            elements.quitBtn.disabled = false;
+            
+            elements.placeholderText.style.display = 'none';
+            elements.gameFrame.style.display = 'block';
+            
+            addLog('🎰 Game started!', 'success');
+            addLog(`🎲 Game is ready in ${modeIcons[gameState.currentMode]} mode!`);
+            
+            // Remind about webcam in AI mode
+            if ((gameState.currentMode === 'cnn' || gameState.currentMode === 'yolo') && !gameState.webcamActive) {
+                addLog('⚠️ AI mode requires webcam to detect dice!');
+            }
+        }
+
+        // Roll dice
+        function rollDice() {
+            if (gameState.currentMode === 'manual') {
+                gameState.stats.manual++;
+                updateStats();
+                addLog('🎲 Rolling dice manually...');
+            }
+        }
+
+        // Quit game
+        function quitGame() {
+            gameState.running = false;
+            updateGameStatus();
+            
+            elements.startBtn.disabled = false;
+            elements.rollBtn.disabled = true;
+            elements.quitBtn.disabled = true;
+            
+            addLog('🚪 Cashing out... Game stopped.', 'danger');
+        }
+
+        // Update game status display
+        function updateGameStatus() {
+            if (gameState.running) {
+                elements.statusIndicator.className = 'status-indicator running';
+                elements.statusText.textContent = 'Game Running';
+            } else {
+                elements.statusIndicator.className = 'status-indicator stopped';
+                elements.statusText.textContent = 'Game Stopped';
+            }
+        }
+
+        // Update statistics display
+        function updateStats() {
+            document.getElementById('stat-manual').textContent = gameState.stats.manual;
+            document.getElementById('stat-cnn').textContent = gameState.stats.cnn;
+            document.getElementById('stat-yolo').textContent = gameState.stats.yolo;
+            
+            const total = gameState.stats.manual + gameState.stats.cnn + gameState.stats.yolo;
+            document.getElementById('stat-total').textContent = total;
+        }
+
+        // Add log entry
+        function addLog(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+            logEntry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
+            
+            elements.gameLog.appendChild(logEntry);
+            elements.gameLog.scrollTop = elements.gameLog.scrollHeight;
+            
+            // Keep only last 100 entries
+            while (elements.gameLog.children.length > 100) {
+                elements.gameLog.removeChild(elements.gameLog.firstChild);
+            }
+        }
+
+        // Update frame display
+        function updateFrame(frameData) {
+            elements.gameFrame.src = frameData;
+        }
+
+        // Update performance metrics
+        function updatePerformance(fps, frameNum) {
+            gameState.fps = fps;
+            gameState.frameNumber = frameNum;
+            elements.fps.textContent = fps.toFixed(1);
+            elements.frameNumber.textContent = frameNum;
+        }
+
+        // Get current state (called from Python)
+        window.getGameState = function() {
+            const state = {
+                running: gameState.running,
+                mode: gameState.currentMode,
+                stats: gameState.stats,
+                webcamActive: gameState.webcamActive  // Added this
+            };
+            // Debug log (can comment out later)
+            console.log('getGameState called, webcamActive:', state.webcamActive);
+            return state;
+        };
+
+        // Update frame from Python
+        window.updateGameFrame = function(frameBase64, fps, frameNum) {
+            updateFrame(frameBase64);
+            updatePerformance(fps, frameNum);
+        };
+
+        // Handle mode change from Python
+        window.setMode = function(mode) {
+            selectMode(mode);
+        };
+
+        // Handle game events from Python
+        window.handleGameEvent = function(eventType, data) {
+            if (eventType === 'roll_detected') {
+                if (data.mode === 'cnn') {
+                    gameState.stats.cnn++;
+                } else if (data.mode === 'yolo') {
+                    gameState.stats.yolo++;
+                }
+                updateStats();
+                addLog(`🤖 AI detected roll: ${data.value || 'unknown'}`);
+            } else if (eventType === 'dice_values') {
+                addLog(`🎲 Detected dice: [${data.values.join(', ')}]`);
+            }
+        };
+
+        // Initialize
+        updateGameStatus();
+        updateStats();
+    </script>
+</body>
+</html>
